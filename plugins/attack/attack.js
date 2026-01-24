@@ -10,7 +10,7 @@ if (isMainThread) {
                 type: "Text",
                 label: "Attack Delay (Seconds)",
                 key: "attackDelay",
-                default: "4.8"
+                default: "2.0"
             },
             {
                 type: "Text",
