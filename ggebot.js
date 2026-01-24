@@ -67,8 +67,10 @@ const waitForResult = (key, timeout, func) => new Promise((resolve, reject) => {
         if (err[result] == "LORD_IS_USED")
             lordErrors++
         if(err[result] == "MOVEMENT_HAS_NO_UNITS") {
-            console.error("Closing forcefully due to MOVEMENT_HAS_NO_UNITS error!")
-            parentPort.postMessage([ActionType.KillBot])
+            console.error("Closing in 10 seconds due to MOVEMENT_HAS_NO_UNITS error!")
+            setTimeout(() => {
+                parentPort.postMessage([ActionType.KillBot])
+            }, 10000)
             return
         }
 

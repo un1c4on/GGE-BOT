@@ -555,6 +555,7 @@ const clientGetMinuteSkipKingdom = (skipType, kingdomID, kingdomSkipType) => {
     }
 }
 const GCLAreaInfo = e => ({
+    areaID: Number(e.AID),
     ...GAAAreaInfo(e.AI),
     abandonOutpostTime: Number(e.AOT),
     abandonOutpostTimeCooldown: Number(e.TA)

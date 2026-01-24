@@ -13,10 +13,10 @@ const darkTheme = createTheme({
 
 function App() {
   const [language, setLanguage] = React.useState('en'); // Default language
-  let [users, setUsers] = React.useState([])
-  let [usersStatus, setUsersStatus] = React.useState({})
-  let [plugins, setPlugins] = React.useState([])
-  let [channelInfo, setChannelInfo] = React.useState([])
+  const [users, setUsers] = React.useState([])
+  const [usersStatus, setUsersStatus] = React.useState({})
+  const [plugins, setPlugins] = React.useState([])
+  const [channelInfo, setChannelInfo] = React.useState([])
   let ws = React.useMemo(() => {
     const usersStatus = {}
     const ws = new ReconnectingWebSocket(`${window.location.protocol === 'https:' ? "wss" : "ws"}://${window.location.hostname}:${window.location.port}`,[], {WebSocket: WebSocket, minReconnectionDelay: 3000 })

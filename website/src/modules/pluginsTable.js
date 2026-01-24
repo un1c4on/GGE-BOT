@@ -36,11 +36,12 @@ export default function PluginsTable(props) {
         const [open, setOpen] = React.useState(false)
         const [state, setState] = React.useState(userPlugins[props2.data.key]?.state)
         
-        // Grid boyutlandırma (Daha kompakt)
+        // Grid boyutlandırma (Daha kompakt ve düzenli)
         const getGridSize = (type, label) => {
+            if (type === 'Label') return { xs: 12 }; // Başlıklar her zaman tam satır
             if (type === 'Checkbox') return { xs: 6, sm: 4, md: 3, lg: 2 };
             // Max Waves ve benzeri kısa sayısal alanlar için küçük kutu
-            if (type === 'Text' && (label?.includes('Waves') || label?.includes('Delay'))) return { xs: 6, sm: 4, md: 3, lg: 2 };
+            if (type === 'Text' && (label?.includes('Waves') || label?.includes('Delay') || label?.includes('X') || label?.includes('Y') || label?.includes('Sayısı'))) return { xs: 6, sm: 4, md: 3, lg: 2 };
             if (type === 'Table') return { xs: 12 };
             return { xs: 12, sm: 6, md: 4 };
         };
