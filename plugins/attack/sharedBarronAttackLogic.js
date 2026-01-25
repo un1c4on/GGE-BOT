@@ -237,50 +237,65 @@ async function barronHit(name, type, kid, options) {
                 const doMiddle = pluginOptions.attackMiddle !== false;
                 const doCourtyard = pluginOptions.attackCourtyard !== false;
 
+                let totalAssigned = 0;
+                const MAX_TOTAL_TROOPS = 70;
+
                 attackInfo.A.forEach((wave, waveIndex) => {
-                    // Stop filling waves if we reached the user's limit
-                    if (waveIndex >= maxWaves) return;
+                    // Stop filling waves if we reached the user's limit or total troop limit
+                    if (waveIndex >= maxWaves || totalAssigned >= MAX_TOTAL_TROOPS) return;
 
                     const commanderStats = getCommanderStats(commander)
-                    // Subtract 1 as safety buffer to prevent ATTACK_TOO_MANY_UNITS
-                    const maxTroopFlank = Math.floor(getAmountSoldiersFlank(level) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100) - 1
-                    const maxTroopFront = Math.floor(getAmountSoldiersFront(level) * 1 + (commanderStats.relicAttackUnitAmountFront ?? 0) / 100) - 1
+                    // Subtract 5 as safety buffer to prevent ATTACK_TOO_MANY_UNITS
+                    const maxTroopFlank = Math.floor(getAmountSoldiersFlank(level) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100) - 5
+                    const maxTroopFront = Math.floor(getAmountSoldiersFront(level) * 1 + (commanderStats.relicAttackUnitAmountFront ?? 0) / 100) - 5
                     
-                    let maxTroops = maxTroopFlank
-
                     if (doLeft) {
-                        // if (!hasShieldMadiens) {
-                        wave.L.U.forEach((unitSlot, i) =>
-                            maxTroops -= assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
-                                attackerRangeTroops : attackerMeleeTroops, maxTroops))
-                        // }
+                        let currentMax = Math.min(maxTroopFlank, MAX_TOTAL_TROOPS - totalAssigned);
+                        wave.L.U.forEach((unitSlot, i) => {
+                            if (currentMax <= 0) return;
+                            let assigned = assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
+                                attackerRangeTroops : attackerMeleeTroops, currentMax);
+                            currentMax -= assigned;
+                            totalAssigned += assigned;
+                        });
                     }
 
                     if (doRight) {
-                        maxTroops = maxTroopFlank
-                        wave.R.U.forEach((unitSlot, i) =>
-                            maxTroops -= assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
-                                attackerRangeTroops : attackerMeleeTroops, maxTroops))
+                        let currentMax = Math.min(maxTroopFlank, MAX_TOTAL_TROOPS - totalAssigned);
+                        wave.R.U.forEach((unitSlot, i) => {
+                            if (currentMax <= 0) return;
+                            let assigned = assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
+                                attackerRangeTroops : attackerMeleeTroops, currentMax);
+                            currentMax -= assigned;
+                            totalAssigned += assigned;
+                        });
                     }
 
                     if (doMiddle) {
-                        maxTroops = maxTroopFront
-                        wave.M.U.forEach((unitSlot, i) =>
-                            maxTroops -= assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
-                                attackerRangeTroops : attackerMeleeTroops, maxTroops))
+                        let currentMax = Math.min(maxTroopFront, MAX_TOTAL_TROOPS - totalAssigned);
+                        wave.M.U.forEach((unitSlot, i) => {
+                            if (currentMax <= 0) return;
+                            let assigned = assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
+                                attackerRangeTroops : attackerMeleeTroops, currentMax);
+                            currentMax -= assigned;
+                            totalAssigned += assigned;
+                        });
                     }
                 })
 
 
-                if (doCourtyard) {
-                    let maxTroops = getMaxUnitsInReinforcementWave(playerInfo.level, level)
+                if (doCourtyard && totalAssigned < MAX_TOTAL_TROOPS) {
+                    let maxTroops = Math.min(getMaxUnitsInReinforcementWave(playerInfo.level, level), MAX_TOTAL_TROOPS - totalAssigned);
                     attackInfo.RW.forEach((unitSlot, i) => {
+                        if (maxTroops <= 0) return;
                         let attacker = i & 1 ?
                             (attackerMeleeTroops.length > 0 ? attackerMeleeTroops : attackerRangeTroops) :
                             (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops)
 
-                        maxTroops -= assignUnit(unitSlot, attacker,
-                            Math.floor(maxTroops / 2))
+                        let assigned = assignUnit(unitSlot, attacker,
+                            Math.floor(maxTroops / 2));
+                        maxTroops -= assigned;
+                        totalAssigned += assigned;
                     })
                 }
 
