@@ -6,6 +6,11 @@ if (isMainThread)
         name: name,
         description: "Hits Barrons",
         pluginOptions: [
+            {
+                type: "Text",
+                label: "Com White List",
+                key: "commanderWhiteList"
+            },
             { type: "Label", label: "Horse Settings" },
             {
                 type: "Checkbox",

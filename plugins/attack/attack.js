@@ -25,6 +25,11 @@ if (isMainThread) {
                 default: "4"
             },
             {
+                type: "Text",
+                label: "Com White List",
+                key: "commanderWhiteList"
+            },
+            {
                 type: "Checkbox",
                 label: "Attack Left Flank",
                 key: "attackLeft",

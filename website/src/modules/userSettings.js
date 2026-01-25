@@ -11,63 +11,101 @@ import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
+import CircularProgress from '@mui/material/CircularProgress'
 
 import { ErrorType, ActionType } from "../types.js"
 import PluginsTable from './pluginsTable'
-import { getTranslation } from '../translations.js' // Import translation
-
-let lang = JSON.parse(await (await fetch(`${window.location.protocol === 'https:' ? "https" : "http"}://${window.location.hostname}:${window.location.port}/lang.json`)).text())
-
-let servers = new DOMParser()
-    .parseFromString(await (await fetch(`${window.location.protocol === 'https:' ? "https" : "http"}://${window.location.hostname}:${window.location.port}/1.xml`)).text(),"text/xml")
-let instances = []
-let _instances = servers.getElementsByTagName("instance")
-
-for (var key in _instances) {
-    let obj = _instances[key]
-
-    let server, zone, instanceLocaId, instanceName
-    
-    for (var key2 in obj.childNodes) {
-        let obj2 = obj.childNodes[key2]
-        
-        switch(obj2.nodeName) 
-        {
-            case "server":
-                server = obj2.childNodes[0].nodeValue
-                break
-            case "zone":
-                zone = obj2.childNodes[0].nodeValue
-                break
-            case "instanceLocaId":
-                instanceLocaId = obj2.childNodes[0].nodeValue
-                break
-            case "instanceName":
-                instanceName = obj2.childNodes[0].nodeValue
-                break
-            default:
-        }
-    }
-    if(instanceLocaId)
-    instances.push({id: obj.getAttribute("value"),server,zone,instanceLocaId,instanceName})
-}
+import { getTranslation } from '../translations.js'
 
 export default function UserSettings(props) {
-    const { language } = props; // Get language from props
+    const { language } = props;
     const t = (key) => getTranslation(language, key);
 
-    props.selectedUser.name ??= ""
-    const isNewUser = props.selectedUser.name === ""
-    const [name, setName] = React.useState(props.selectedUser.name)
-    const [pass, setPass] = React.useState("")
-    const [plugins, setPlugins] = React.useState(props.selectedUser.plugins)
-    const [server, setServer] = React.useState(props.selectedUser.server ?? instances[0].id)
-    const [externalEvent, setExternalEvent] = React.useState(props.selectedUser.externalEvent)
+    const [loading, setLoading] = React.useState(true);
+    const [instances, setInstances] = React.useState([]);
+    const [langData, setLangData] = React.useState({});
+    
+    // Form states
+    const [name, setName] = React.useState(props.selectedUser.name ?? "");
+    const [pass, setPass] = React.useState("");
+    const [plugins, setPlugins] = React.useState(props.selectedUser.plugins);
+    const [server, setServer] = React.useState(props.selectedUser.server || "");
+    const [externalEvent, setExternalEvent] = React.useState(props.selectedUser.externalEvent);
+
+    const isNewUser = props.selectedUser.name === "" || !props.selectedUser.name;
+
+    React.useEffect(() => {
+        const fetchData = async () => {
+            try {
+                const protocol = window.location.protocol === 'https:' ? "https" : "http";
+                const host = `${protocol}://${window.location.hostname}:${window.location.port}`;
+                
+                // Fetch lang.json
+                const langRes = await fetch(`${host}/lang.json`);
+                const langJson = await langRes.json();
+                setLangData(langJson);
+
+                // Fetch 1.xml
+                const xmlRes = await fetch(`${host}/1.xml`);
+                const xmlText = await xmlRes.text();
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+                
+                const _instances = xmlDoc.getElementsByTagName("instance");
+                const loadedInstances = [];
+
+                for (let i = 0; i < _instances.length; i++) {
+                    const obj = _instances[i];
+                    let serverName, zone, instanceLocaId, instanceName;
+
+                    for (let j = 0; j < obj.childNodes.length; j++) {
+                        const child = obj.childNodes[j];
+                        if (child.nodeName === "server") serverName = child.textContent;
+                        if (child.nodeName === "zone") zone = child.textContent;
+                        if (child.nodeName === "instanceLocaId") instanceLocaId = child.textContent;
+                        if (child.nodeName === "instanceName") instanceName = child.textContent;
+                    }
+
+                    if (instanceLocaId) {
+                        loadedInstances.push({
+                            id: obj.getAttribute("value"),
+                            server: serverName,
+                            zone,
+                            instanceLocaId,
+                            instanceName
+                        });
+                    }
+                }
+                setInstances(loadedInstances);
+                
+                // If it's a new user and server isn't set, default to first instance
+                if ((!props.selectedUser.server || props.selectedUser.server === "") && loadedInstances.length > 0) {
+                    setServer(loadedInstances[0].id);
+                }
+
+                setLoading(false);
+            } catch (error) {
+                console.error("Failed to load settings data:", error);
+                setLoading(false);
+            }
+        };
+
+        fetchData();
+    }, [props.selectedUser.server]);
 
     const pluginTable = React.useMemo(() => {
         return <PluginsTable plugins={props.plugins} userPlugins={plugins} channels={props.channels} 
-                    onChange={ e => setPlugins(e)} language={language} /> // Pass language
-    }, [props.channels, props.plugins, plugins, language])
+                    onChange={e => setPlugins(e)} language={language} />
+    }, [props.channels, props.plugins, plugins, language]);
+
+    if (loading) {
+        return (
+            <div onClick={event => event.stopPropagation()} style={{ padding: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#333', color: '#fff' }}>
+                <CircularProgress color="inherit" />
+                <Typography sx={{ ml: 2 }}>Loading settings...</Typography>
+            </div>
+        );
+    }
 
     return (
         <div onClick={event => event.stopPropagation()} style={{ maxWidth: '90vw', width: '800px' }}>
@@ -86,7 +124,11 @@ export default function UserSettings(props) {
                                 onChange={(newValue) => setServer(newValue.target.value)}
                             >
                                 {
-                                    instances.map((server, i) => <MenuItem value={server.id} key={`Server${i}`}>{lang[server.instanceLocaId] + ' ' + server.instanceName}</MenuItem>)
+                                    instances.map((inst, i) => (
+                                        <MenuItem value={inst.id} key={`Server${i}`}>
+                                            {(langData[inst.instanceLocaId] || inst.instanceLocaId) + ' ' + inst.instanceName}
+                                        </MenuItem>
+                                    ))
                                 }
                             </Select>
                         </FormControl>

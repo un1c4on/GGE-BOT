@@ -18,7 +18,7 @@ import { getTranslation } from '../translations.js'
 
 function Log(props) {
     const [currentLogs, setCurrentLogs] = React.useState([])
-// ... (Log component code remains mostly same, skipping for brevity in replace block targeting GGEUserTable)
+    const { t } = props;
 
     React.useEffect(() => {
         const logGrabber = msg => {
@@ -29,25 +29,45 @@ function Log(props) {
 
             if (Number(err) !== ErrorType.Success)
                 return
-
+            
+            // obj[2] contains the user ID if sent by backend, or we infer from context. 
+            // Since backend structure is fixed, we assume obj[0] is logs.
+            // If the backend broadcasts all logs to everyone, we might need filtering here.
+            // However, based on 'ActionType.GetLogs' usage, it seems to request logs for a specific user.
+            // If we want to ensure we don't mix logs, we should clear logs when opening a new user.
+            
             setCurrentLogs(obj[0].splice(obj[1], obj[0].length - 1).concat(obj[0]).map((obj, index) =>
                 <div key={index} style={{
-                    color: obj[0] === LogLevel.Error ? "red" :
-                        obj[0] === LogLevel.Warn ? "yellow" : "blue"
-                }}>{obj[1]}</div>
+                    color: obj[0] === LogLevel.Error ? "#ff5555" :
+                        obj[0] === LogLevel.Warn ? "#ffb86c" : "#8be9fd",
+                    fontFamily: 'monospace',
+                    borderBottom: '1px solid #333',
+                    padding: '2px 0'
+                }}>
+                    <span style={{color: '#6272a4', marginRight: '10px'}}>[{new Date().toLocaleTimeString()}]</span>
+                    {obj[1]}
+                </div>
             ).reverse())
         }
         props.ws.addEventListener("message", logGrabber)
         return () =>
             props.ws.removeEventListener("message", logGrabber)
 
-    }, [props.ws])
+    }, [props.ws, props.user]) // Re-run when user changes
 
     return (
-        <Paper sx={{ maxHeight: '90%', overflow: 'auto', height: '80%', width: '40%' }}>
+        <Paper sx={{ maxHeight: '90%', overflow: 'hidden', height: '80%', width: '60%', bgcolor: '#000', color: '#f8f8f2', display: 'flex', flexDirection: 'column' }}>
+            <Box sx={{ p: 1, borderBottom: '1px solid #444', display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: '#1e1e1e' }}>
+                <Typography variant="h6" sx={{ color: '#fff', fontFamily: 'monospace' }}>
+                     {props.user ? `${props.user.name} Logs` : "System Logs"}
+                </Typography>
+                <Button variant="outlined" color="error" size="small" onClick={() => setCurrentLogs([])}>
+                    {t("Clear Logs")}
+                </Button>
+            </Box>
             <div onClick={e => e.stopPropagation()}
-                style={{ width: "100%", height: "100%" }}>
-                <Typography variant="subtitle1" component="div" align='left' padding={"10px"}>
+                style={{ width: "100%", height: "100%", overflowY: 'auto', padding: '10px', backgroundColor: '#000' }}>
+                <Typography variant="body2" component="div" align='left' sx={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>
                     {currentLogs}
                 </Typography>
             </div>
@@ -61,6 +81,7 @@ export default function GGEUserTable(props) {
     const [openSettings, setOpenSettings] = React.useState(false)
     const [selectedUser, setSelectedUser] = React.useState(user)
     const [openLogs, setOpenLogs] = React.useState(false)
+    const [logUser, setLogUser] = React.useState(null)
 
     const handleSettingsClose = () => {
         setOpenSettings(false)
@@ -69,8 +90,10 @@ export default function GGEUserTable(props) {
     const handleSettingsOpen = () =>
         setOpenSettings(true)
 
-    const handleLogClose = () =>
+    const handleLogClose = () => {
         setOpenLogs(false)
+        setLogUser(null)
+    }
 
     const handleLogOpen = () =>
         setOpenLogs(true)
@@ -114,7 +137,9 @@ export default function GGEUserTable(props) {
                                 onClick={async () =>
                                     window.open(`https://discord.com/oauth2/authorize?client_id=${props.channelInfo[0]}&permissions=8&response_type=code&redirect_uri=${window.location.protocol === 'https:' ? "https" : "http"}%3A%2F%2F${window.location.hostname}%3A${window.location.port !== '' ? window.location.port : window.location.protocol === 'https:' ? "443" : "80"}%2FdiscordAuth&integration_type=0&scope=identify+guilds.join+bot`, "_blank")}
                             >{t("Link Discord")}</Button>
-                            <Button variant="contained" style={{ maxWidth: '64px', maxHeight: '32px', minWidth: '32px', minHeight: '32px', marginRight: "10px" }} onClick={handleSettingsOpen}>+</Button>
+                            <Button variant="contained" style={{ maxHeight: '32px', minHeight: '32px', marginRight: "10px", minWidth: '100px' }} onClick={handleSettingsOpen}>
+                                {t("Add Castle")}
+                            </Button>
                         </TableCell>
                     </TableRow>
                 </TableHead>
@@ -165,27 +190,27 @@ export default function GGEUserTable(props) {
                                 <TableCell>
                                     <Box sx={{ display: 'flex' }}>
                                         <Box sx={{ display: 'flex', flexDirection: "column" }} paddingRight={"10px"}>
-                                            <Typography>{status.aquamarine ? "Aqua" : ""}</Typography>
+                                            <Typography>{status.aquamarine ? t("Aqua") : ""}</Typography>
                                             <Typography>{status.aquamarine ?? ""}</Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', flexDirection: "column" }} paddingRight={"10px"}>
-                                            <Typography>{status.level ? "Level" : ""}</Typography>
+                                            <Typography>{status.level ? t("Level") : ""}</Typography>
                                             <Typography>{status.level ?? ""}</Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', flexDirection: "column" }} paddingRight={"10px"}>
-                                            <Typography>{status.mead ? "Mead" : ""}</Typography>
+                                            <Typography>{status.mead ? t("Mead") : ""}</Typography>
                                             <Typography>{status.mead ?? ""}</Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', flexDirection: "column" }} paddingRight={"10px"}>
-                                            <Typography>{status.food ? "Food" : ""}</Typography>
+                                            <Typography>{status.food ? t("Food") : ""}</Typography>
                                             <Typography>{status.food ?? ""}</Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', flexDirection: "column" }} paddingRight={"10px"}>
-                                            <Typography>{status.coin ? "Coin" : ""}</Typography>
+                                            <Typography>{status.coin ? t("Coin") : ""}</Typography>
                                             <Typography>{status.coin ?? ""}</Typography>
                                         </Box>
                                         <Box sx={{ display: 'flex', flexDirection: "column" }} paddingRight={"10px"}>
-                                            <Typography>{status.rubies ? "Rubies" : ""}</Typography>
+                                            <Typography>{status.rubies ? t("Rubies") : ""}</Typography>
                                             <Typography>{status.rubies ?? ""}</Typography>
                                         </Box>
                                     </Box>
@@ -193,6 +218,7 @@ export default function GGEUserTable(props) {
                                 <TableCell align="right" padding='none' style={{ padding: "10px" }}>
                                     <Button variant="text" onClick={() => {
                                         props.ws.send(JSON.stringify([ErrorType.Success, ActionType.GetLogs, row]))
+                                        setLogUser(row)
                                         handleLogOpen()
                                     }}>{t("Logs")}</Button>
                                     <Button variant="text" onClick={() => {
@@ -253,7 +279,7 @@ export default function GGEUserTable(props) {
                 handleLogClose()
             }}
             style={{ maxHeight: '100%', overflow: 'auto' }} >
-                <Log ws={props.ws}/>
+                <Log ws={props.ws} t={t} user={logUser}/>
                 </Backdrop>
             <PlayerTable/>
         </>

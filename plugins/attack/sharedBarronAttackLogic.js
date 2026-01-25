@@ -387,6 +387,12 @@ async function barronHit(name, type, kid, options) {
         while (await sendHit());
     }
 
+    sortedAreaInfo.sort((a, b) => {
+        let d1 = Math.sqrt(Math.pow(sourceCastleArea.x - a.x, 2) + Math.pow(sourceCastleArea.y - a.y, 2))
+        let d2 = Math.sqrt(Math.pow(sourceCastleArea.x - b.x, 2) + Math.pow(sourceCastleArea.y - b.y, 2))
+        return d1 - d2
+    })
+
     while (true) {
         let minimumTimeTillHit = Infinity
         sortedAreaInfo.forEach(e => 
