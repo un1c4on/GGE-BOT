@@ -56,6 +56,11 @@ function spiralCoordinates(n) {
     return { x, y }
 }
 async function barronHit(name, type, kid, options) {
+    setTimeout(() => {
+        console.log(`[${name}] 3-hour cycle reached. Exiting for restart.`);
+        process.exit(0);
+    }, 3 * 60 * 60 * 1000);
+
     function getLevel(victorys, kid) {
         function getKingdomOffset(e) {
             let t = 0
@@ -186,7 +191,7 @@ async function barronHit(name, type, kid, options) {
                 if (index == -1)
                     return
 
-                let AI = sortedAreaInfo[index]
+                let AI = sortedAreaInfo.splice(index, 1)[0]
                 
                 // Simulating: Clicking on target (Reaction time ~300ms-600ms)
                 await sleep(boxMullerRandom(300, 600, 1)) 
@@ -346,7 +351,7 @@ async function barronHit(name, type, kid, options) {
                     useCommander(commander.lordID)
                 case "COOLING_DOWN":
                 case "TIMED_OUT":
-                    return false
+                    return true
                 case "ATTACK_TOO_MANY_UNITS":
                     console.warn(`[${name}] Math error (Too Many Units). Skipping this target to prevent crash.`)
                     return true

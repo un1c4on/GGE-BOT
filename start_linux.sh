@@ -44,4 +44,8 @@ then
   gnome-open $URL &
 fi
 
-node --no-warnings main.js
+while true; do
+    node --no-warnings main.js
+    echo "Bot process exited. Restarting in 5 seconds..."
+    sleep 5
+done
