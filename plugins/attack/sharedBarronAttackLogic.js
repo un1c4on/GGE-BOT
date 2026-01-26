@@ -346,7 +346,7 @@ async function barronHit(name, type, kid, options) {
                     useCommander(commander.lordID)
                 case "COOLING_DOWN":
                 case "TIMED_OUT":
-                    return true
+                    return false
                 case "ATTACK_TOO_MANY_UNITS":
                     console.warn(`[${name}] Math error (Too Many Units). Skipping this target to prevent crash.`)
                     return true
