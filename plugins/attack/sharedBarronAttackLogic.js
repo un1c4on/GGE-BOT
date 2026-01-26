@@ -250,9 +250,13 @@ async function barronHit(name, type, kid, options) {
                     if (waveIndex >= maxWaves || totalAssigned >= MAX_TOTAL_TROOPS) return;
 
                     const commanderStats = getCommanderStats(commander)
-                    // Subtract 5 as safety buffer to prevent ATTACK_TOO_MANY_UNITS
-                    const maxTroopFlank = Math.floor(getAmountSoldiersFlank(level) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100) - 5
-                    const maxTroopFront = Math.floor(getAmountSoldiersFront(level) * 1 + (commanderStats.relicAttackUnitAmountFront ?? 0) / 100) - 5
+                    // Subtract safety buffer to prevent ATTACK_TOO_MANY_UNITS
+                    // Use smaller buffer for low levels
+                    let rawFlank = Math.floor(getAmountSoldiersFlank(level) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100)
+                    let rawFront = Math.floor(getAmountSoldiersFront(level) * 1 + (commanderStats.relicAttackUnitAmountFront ?? 0) / 100)
+                    
+                    const maxTroopFlank = Math.max(0, rawFlank - (rawFlank > 15 ? 5 : 1))
+                    const maxTroopFront = Math.max(0, rawFront - (rawFront > 15 ? 5 : 1))
                     
                     if (doLeft) {
                         let currentMax = Math.min(maxTroopFlank, MAX_TOTAL_TROOPS - totalAssigned);
@@ -302,6 +306,11 @@ async function barronHit(name, type, kid, options) {
                         maxTroops -= assigned;
                         totalAssigned += assigned;
                     })
+                }
+
+                if (totalAssigned <= 0) {
+                     console.warn(`[${name}] Skipped target C${attackInfo.AAM.UM.L.VIS + 1} (Level ${level}) - No troops assigned (Capacity too low?)`)
+                     return { result: 0, executionDuration: 0 } // Return dummy success to continue loop
                 }
 
                 // Final hesitation before clicking "Attack" (Human verification/hesitation ~150ms-400ms)
