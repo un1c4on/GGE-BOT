@@ -26,6 +26,6 @@ if (isNaN(Number(pluginOptions.hours)))
 
 events.once("load", () => {
     setTimeout(() => 
-        parentPort.postMessage([ActionType.KillBot]),
+        process.exit(0),
         Number(pluginOptions.hours) * 1000 * 60 * 60)
 })
