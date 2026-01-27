@@ -76,7 +76,6 @@ xtHandler.on("sne", obj => {
     obj.MSG.forEach(message => { if (message[1] == 67) sendXT("dms", JSON.stringify({ MID: message[0] })) });
 })
 
-const localInventoryAdjustment = new Map(); 
 const randomDelay = (min, max) => Math.floor(Math.random() * (max - min + 1) + min);
 
 // --- TRANSFER LOGIC ---
@@ -190,13 +189,6 @@ const startLogic = async () => {
                 .castles.find(a => a.kingdomID == kid)
                 .areaInfo.find(a => a.areaID == sourceCastleArea.extraData[0])
 
-            sourceCastle.unitInventory.forEach(u => {
-                if (localInventoryAdjustment.has(u.unitID)) {
-                    u.ammount -= localInventoryAdjustment.get(u.unitID);
-                    if(u.ammount < 0) u.ammount = 0;
-                }
-            });
-
             let availableTroops = [];
             let inventoryLog = [];
 
@@ -214,14 +206,14 @@ const startLogic = async () => {
 
             // MINIMUM 30 ASKER ŞARTI (Saldırı için)
             if (totalStrong < 30) {
-                console.log(`[${name}] Not enough troops (${totalStrong}/30). Waiting 30s...`)
-                await sleep(30000); // 30 Saniye bekleme
+                console.log(`[${name}] Not enough troops (${totalStrong}/30). Waiting 15s...`)
+                await sleep(15000); 
                 continue;
             }
 
             if (totalStrong < 60) {
-                console.log(`[${name}] Low troops (${totalStrong}). Waiting...`)
-                await sleep(30000); // 30 Saniye bekleme
+                console.log(`[${name}] Low troops (${totalStrong}). Waiting 5s...`)
+                await sleep(5000); 
                 continue;
             }
 
@@ -266,11 +258,7 @@ const startLogic = async () => {
 
                 await areaInfoLock(() => sendXT("cra", JSON.stringify(attackInfo)))
                 let [obj, r] = await waitForResult("cra", 10000, (o, res) => true)
-                if (r == 0) {
-                    for (const [id, amount] of Object.entries(usedUnits)) {
-                        localInventoryAdjustment.set(Number(id), (localInventoryAdjustment.get(Number(id)) || 0) + amount);
-                    }
-                }
+                
                 return { ...obj, result: r }
             })
 
