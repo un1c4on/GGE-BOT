@@ -3,7 +3,6 @@ const { isMainThread } = require('node:worker_threads')
 const name = "Attack Berimond Kingdom"
 
 if (isMainThread) {
-    // MAIN THREAD
     module.exports = {
         name: name,
         description: "Hardcoded Attack + Fixed Transfer Logic",
@@ -117,8 +116,6 @@ const transferTroopsLogic = async () => {
             // --- TEMPORARY: TRANSFER FROM KINGDOM ID 3 ---
             const sourceKingdomID = 3;
             const sourceCastleList = dcl.castles.find(e => e.kingdomID == sourceKingdomID);
-            
-            // Get first castle in Kingdom 3
             let sourceCastle = sourceCastleList?.areaInfo[0];
             
             if (sourceCastle) {
@@ -154,13 +151,13 @@ const transferTroopsLogic = async () => {
                 }
 
                 if (sendTroops.length > 0) {
+                    console.log(`[${name}] Sending Transfer from K${sourceKingdomID}: [${logDetails.join(", ")}]`)
                     sendXT("kut", JSON.stringify({ SCID: sourceCastle.areaID, SKID: sourceKingdomID, TKID: kid, CID: -1, A: sendTroops }))
                     await waitForResult("kut", 10000); 
                     
                     if (pluginOptions.useTimeSkips) {
                         console.log(`[${name}] Waiting 2s before skip...`)
                         await sleep(2000);
-                        // Sabit MS5 (Loglardaki değer) Skip kullan
                         console.log(`[${name}] Sending MS5 Skip...`)
                         await ClientCommands.getMinuteSkipKingdom("MS5", kid, KingdomSkipType.sendTroops)();
                     }
@@ -215,15 +212,17 @@ const startLogic = async () => {
             let totalStrong = availableTroops.reduce((a,b)=>a+b[1],0);
             if (inventoryLog.length > 0) console.log(`[${name}] Inventory: [${inventoryLog.join(", ")}] (Total: ${totalStrong})`)
 
-            // MINIMUM 30 ASKER ŞARTI
+            // MINIMUM 30 ASKER ŞARTI (Saldırı için)
             if (totalStrong < 30) {
-                console.log(`[${name}] Not enough troops (${totalStrong}/30). Waiting...`)
-                await sleep(20000); continue;
+                console.log(`[${name}] Not enough troops (${totalStrong}/30). Waiting 30s...`)
+                await sleep(30000); // 30 Saniye bekleme
+                continue;
             }
 
             if (totalStrong < 60) {
                 console.log(`[${name}] Low troops (${totalStrong}). Waiting...`)
-                await sleep(20000); continue;
+                await sleep(30000); // 30 Saniye bekleme
+                continue;
             }
 
             let comList = undefined
