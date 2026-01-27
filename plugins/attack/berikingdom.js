@@ -240,21 +240,18 @@ const startLogic = async () => {
                 if (pluginOptions.useFeather) attackInfo.PTT = 2;
 
                 const findUnit = (id) => sourceCastle.unitInventory.find(u => u.unitID == id);
-                const t651 = findUnit(651); const t776 = findUnit(776); const t16 = findUnit(16); const t775 = findUnit(775);
+                const t651 = findUnit(651); const t776 = findUnit(776);
                 
                 availableTroops.sort((a, b) => Math.max(Number(b[0].meleeAttack||0), Number(b[0].rangeAttack||0)) - Math.max(Number(a[0].meleeAttack||0), Number(a[0].rangeAttack||0)));
-                let fakeTroops = [...availableTroops].reverse();
 
-                if (!t651 || t651.ammount < 10 || !t776 || t776.ammount < 20 || !t16 || t16.ammount < 55 || !t775 || t775.ammount < 15) return { result: "MISSING_ITEMS" }
+                if (!t651 || t651.ammount < 10 || !t776 || t776.ammount < 20) return { result: "MISSING_ITEMS" }
 
                 const wave = attackInfo.A[0];
                 wave.L.T[0] = [651, 10]; wave.L.T[1] = [776, 20]; assignUnit(wave.L.U[0], availableTroops, 54);
-                wave.R.T[0] = [16, 30]; assignUnit(wave.R.U[0], fakeTroops, 1);
-                wave.M.T[0] = [16, 25]; wave.M.T[1] = [775, 15]; assignUnit(wave.M.U[0], fakeTroops, 1);
 
                 const usedUnits = {};
                 const track = (slot) => { if (slot[0] != -1) usedUnits[slot[0]] = (usedUnits[slot[0]] || 0) + slot[1]; };
-                track(wave.L.U[0]); track(wave.R.U[0]); track(wave.M.U[0]);
+                track(wave.L.U[0]);
 
                 await areaInfoLock(() => sendXT("cra", JSON.stringify(attackInfo)))
                 let [obj, r] = await waitForResult("cra", 10000, (o, res) => true)
