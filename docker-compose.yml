@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: ggebot_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: un1c4on
+      POSTGRES_PASSWORD: un1c4on
+      POSTGRES_DB: ggebot_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
