@@ -32,7 +32,7 @@ export default function UserSettings(props) {
     const [server, setServer] = React.useState(props.selectedUser.server || "");
     const [externalEvent, setExternalEvent] = React.useState(props.selectedUser.externalEvent);
 
-    const isNewUser = props.selectedUser.name === "" || !props.selectedUser.name;
+    const isNewUser = !props.selectedUser.id; // Eğer ID yoksa yeni kullanıcıdır
 
     React.useEffect(() => {
         const fetchData = async () => {
@@ -142,16 +142,26 @@ export default function UserSettings(props) {
                     <Button variant="contained" color="primary"
                         sx={{ minWidth: '100px' }}
                         onClick={async () => {
+                            // Sadece gerçekten dolu olan pluginleri filtrele
+                            const activePlugins = {};
+                            Object.entries(plugins).forEach(([key, val]) => {
+                                // Eğer plugin aktifse (true) VEYA içinde state dışında başka ayarlar varsa gönder
+                                const hasSettings = Object.keys(val).filter(k => k !== 'state' && k !== 'filename').length > 0;
+                                if (val && (val.state === true || hasSettings)) {
+                                    activePlugins[key] = val;
+                                }
+                            });
+
                             let obj = {
+                                id: props.selectedUser.id,
                                 name: name,
                                 pass: pass,
                                 server: server,
-                                plugins: plugins,
+                                plugins: activePlugins, // Küçültülmüş veri
                                 externalEvent: externalEvent
                             }
-                            if (!isNewUser) {
-                                obj.id = props.selectedUser.id
-                                if (pass === "") obj.pass = props.selectedUser.pass
+                            if (!isNewUser && pass === "") {
+                                obj.pass = props.selectedUser.pass
                             }
 
                             props.ws.send(JSON.stringify([

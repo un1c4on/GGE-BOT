@@ -8,13 +8,16 @@ const https = require('node:https')
 const bodyParser = require('body-parser')
 const { WebSocketServer } = require("ws")
 const {parseStringPromise} = require('xml2js')
-const { DatabaseSync } = require('node:sqlite')
 const { Worker } = require('node:worker_threads')
 const { Client, Events, GatewayIntentBits, PermissionFlagsBits } = require('discord.js')
 const ErrorType = require('./errors.json')
 const ActionType = require('./actions.json')
 
+const { User: DBUser, GameAccount, BotConfig, sequelize, BotLog } = require('./database/models');
 const { I18n } = require('i18n')
+const session = require('express-session');
+const pgSession = require('connect-pg-simple')(session);
+const { Pool } = require('pg');
 
 const i18n = new I18n({
   locales: ['en', 'de', 'ar', 'fi', 'he', 'hu', 'pl', 'ro', 'tr'],
@@ -35,8 +38,6 @@ const clientOptions = {
 
 const client = new Client(clientOptions)
 
-console.info(i18n.__("startBanner"))
-
 const ggeConfigExample = `{
     "webPort" : "3001",
     "fontPath" : "",
@@ -52,742 +53,365 @@ const ggeConfigExample = `{
 const loggedInUsers = {}
 const botMap = new Map()
 
-const userDatabase = new DatabaseSync('./user.db', { timeout: 1000 * 60})
-userDatabase.exec(
-  `CREATE TABLE IF NOT EXISTS "Users" (
-	"username"	TEXT NOT NULL UNIQUE,
-	"passwordHash" BLOB NOT NULL,
-  "passwordSalt" INTEGER NOT NULL,
-  "uuid" TEXT UNIQUE,
-	"privilege"	INTEGER,
-  "discordUserId"	TEXT,
-  "discordGuildId" TEXT
-)
-`)
-userDatabase.exec(
-  `CREATE TABLE IF NOT EXISTS "SubUsers" (
-  "id"	INTEGER,
-	"uuid"	TEXT NOT NULL,
-	"name"	TEXT NOT NULL,
-	"pass"	TEXT NOT NULL,
-	"plugins"	TEXT,
-	"state"	INTEGER,
-  "externalEvent" INTEGER,
-	"server"	INTEGER,
-  PRIMARY KEY("id" AUTOINCREMENT)
-)
-`)
-
 class User {
   constructor(obj) {
-    if (obj == undefined)
-      return
-    this.id = Number(obj?.id)
-    this.uuid = String(obj?.uuid)
-    this.state = Number(obj?.state)
-    this.name = String(obj?.name)
-    this.pass = String(obj?.pass)
-    this.server = Number(obj?.server)
-    this.plugins = obj?.plugins ?? {}
-    this.externalEvent = Boolean(obj?.externalEvent)
+    if (obj == undefined) return
+    this.id = obj.id ? Number(obj.id) : null
+    this.state = obj.is_active ? 1 : (obj.state ?? 0)
+    this.name = obj.name || obj.game_username || ""
+    this.pass = obj.pass || obj.game_password_encrypted || ""
+    this.server = obj.server || obj.game_server || "10"
+    this.plugins = obj.plugins || {}
+    
+    if (obj.BotConfigs) {
+      this.plugins = {}
+      obj.BotConfigs.forEach(config => {
+        this.plugins[config.plugin_name] = { 
+          ...(typeof config.settings === 'object' ? config.settings : {}), 
+          state: config.is_enabled 
+        };
+      });
+    }
+    this.externalEvent = !!(obj.externalEvent)
   }
 }
-const addUser = (uuid, user) => {
-  userDatabase.prepare('INSERT INTO SubUsers (uuid, name, pass, plugins, state, externalEvent, server) VALUES(?,?,?,?,?,?,?)')
-    .run(uuid, user.name, user.pass, JSON.stringify(user.plugins), 0, Number(user.externalEvent), user.server)
+
+const addUser = async (userId, user) => {
+  return await GameAccount.create({
+    UserId: userId,
+    game_server: String(user.server || '10'),
+    game_username: user.name,
+    game_password_encrypted: user.pass,
+    is_active: false
+  });
 }
-const getSpecificUser = (uuid, user) => {
-  const row = userDatabase.prepare('Select id, name, plugins, pass, state, externalEvent, server From SubUsers WHERE uuid=? AND id=?')
-    .get(uuid, user.id)
 
-  row.plugins = JSON.parse(row.plugins ?? '{}')
-
-  return new User(row)
+const getSpecificUser = async (userId, user) => {
+  if (isNaN(user.id)) return null;
+  const row = await GameAccount.findOne({
+    where: { 
+      id: user.id,
+      UserId: userId // Sadece bu kullanıcıya ait olan hesabı getir (IDOR Koruması)
+    },
+    include: [BotConfig, DBUser]
+  });
+  return row ? new User(row.get({ plain: true })) : null;
 }
-const changeUser = (uuid, user) => {
-  if (user.pass == undefined || user.pass === '' || user.pass == "null") {
-    userDatabase.prepare('UPDATE SubUsers SET name=?, state=?, plugins=?, externalEvent =?, server=? WHERE uuid=? AND id=?')
-      .run(user.name, user.state, JSON.stringify(user.plugins), Number(user.externalEvent), user.server, uuid, user.id)
 
-    const row = userDatabase.prepare('Select id, name, plugins, pass, state, externalEvent, server From SubUsers WHERE uuid=? AND id=?')
-      .get(uuid, user.id)
+const changeUser = async (userId, user) => {
+  if (isNaN(user.id)) return null;
+  const gameAcc = await GameAccount.findOne({
+    where: { 
+      id: user.id,
+      UserId: userId // Sadece bu kullanıcıya ait olan hesabı güncelle (IDOR Koruması)
+    }
+  });
+  if (!gameAcc) return null;
 
-    row.plugins = JSON.parse(row.plugins ?? '{}')
+  const updateData = {
+// ... (bu kısım aynı kalacak)
+    game_username: user.name,
+    is_active: user.state == 1,
+    game_server: user.server || '10'
+  };
 
-    return new User(row)
+  if (user.pass && user.pass !== 'null' && user.pass !== '') {
+    updateData.game_password_encrypted = user.pass;
   }
-  userDatabase.prepare(`UPDATE SubUsers SET name = ?, pass = ?, state = ?, plugins = ?, externalEvent = ?, server = ? WHERE uuid = ? AND id = ?`)
-    .run(user.name, user.pass, user.state, JSON.stringify(user.plugins), Number(user.externalEvent), user.server, uuid, user.id)
 
-  const row = userDatabase.prepare("Select id, name, plugins, pass, state, externalEvent, server From SubUsers WHERE uuid=? AND id=?")
-    .get(uuid, user.id)
-  row.plugins = JSON.parse(row.plugins ?? '{}')
+  await gameAcc.update(updateData);
 
-  return new User(row)
+  for (const [pluginName, pluginData] of Object.entries(user.plugins || {})) {
+    await BotConfig.upsert({
+      GameAccountId: gameAcc.id,
+      plugin_name: pluginName,
+      is_enabled: pluginData.state,
+      settings: pluginData
+    });
+  }
 
+  const updated = await GameAccount.findOne({
+    where: { id: user.id },
+    include: [BotConfig, DBUser]
+  });
+  return new User(updated.get({ plain: true }));
 }
-const removeUser = (uuid, user) => {
-  if (uuid === undefined || user.id === undefined)
-    return
 
-  userDatabase.prepare('DELETE FROM SubUsers WHERE uuid = ? AND id = ?')
-  .run(uuid, user.id)
+const removeUser = async (userId, user) => {
+  if (isNaN(user.id)) return;
+  await GameAccount.destroy({ where: { id: user.id, UserId: userId } });
 }
-const getUser = uuid => {
-  let str = uuid === undefined ? '' : 'Where uuid=?'
 
-  const prep = userDatabase.prepare(`Select id, uuid, name, plugins, pass, state, externalEvent, server From SubUsers ${str}`)
-  const rows = uuid ? prep.all(uuid) : prep.all()
-
-  return rows?.map(e => {
-    e.plugins = JSON.parse(e.plugins)
-    return new User(e)
-  })
+const getUser = async userId => {
+  if (userId && isNaN(userId)) return [];
+  const where = userId ? { UserId: userId } : {};
+  const rows = await GameAccount.findAll({
+    where,
+    include: [BotConfig, DBUser]
+  });
+  return rows.map(e => new User(e.get({ plain: true })));
 }
 
 async function start() {
-  try {
-    await fs.access('./ggeConfig.json')
-  }
-  catch {
-    await fs.writeFile('./ggeConfig.json', ggeConfigExample)
-    console.info(i18n.__('ggeConfigGenerated'))
-  }
+  try { await fs.access('./ggeConfig.json') }
+  catch { await fs.writeFile('./ggeConfig.json', ggeConfigExample); console.info(i18n.__('ggeConfigGenerated')) }
+  
   const ggeConfig = JSON.parse((await fs.readFile('./ggeConfig.json')).toString())
-
   ggeConfig.webPort ??= '3001'
 
-  if (ggeConfig.cert)
-    await fs.access(ggeConfig.cert)
+  if (ggeConfig.cert) await fs.access(ggeConfig.cert)
+  if (ggeConfig.privateKey) await fs.access(ggeConfig.privateKey)
 
-  if (ggeConfig.privateKey)
-    await fs.access(ggeConfig.privateKey)
-
-  let certFound = true
-  if (!(ggeConfig.privateKey || ggeConfig.cert)) {
-    certFound = false
-    if (!ggeConfig.privateKey)
-      console.warn(i18n.__("couldntFindPrivateKey"))
-    if (!ggeConfig.cert)
-      console.warn(i18n.__("couldntFindCertificate"))
-  }
-  let hasDiscord = true
-
-  if (!ggeConfig.fontPath) {
-    try {
-      ggeConfig.fontPath ??= 'C:\\Windows\\Fonts\\segoeui.ttf'
-      await fs.access(ggeConfig.fontPath)
-    }
-    catch {
-      console.warn(`${i18n.__("couldntAccessFont")} ${ggeConfig.fontPath}`)
-    }
-  }
-
-  if (!ggeConfig.discordToken || !ggeConfig.discordClientId) {
-    console.warn(i18n.__("couldntSetupDiscord"))
-    console.warn(i18n.__("configurationsMissing"))
-    if (!ggeConfig.discordToken)
-      console.warn('discordToken')
-    if (!ggeConfig.discordClientId)
-      console.warn('discordClientId')
-
-    hasDiscord = false
-  }
+  let certFound = !!(ggeConfig.privateKey && ggeConfig.cert)
+  let hasDiscord = !!(ggeConfig.discordToken && ggeConfig.discordClientId)
 
   let needLang = false
   async function getItemsJSON() {
     const response = await fetch('https://empire-html5.goodgamestudios.com/default/items/ItemsVersion.properties')
     const str = await response.text()
-
     let str2 = undefined
-    try {
-      str2 = (await fs.readFile('./ItemsVersion.properties')).toString()
-    }
-    catch {}
-
+    try { str2 = (await fs.readFile('./ItemsVersion.properties')).toString() } catch {}
     let needItems = needLang = str != str2
-    try {
-      await fs.access('./items')
-    }
-    catch {
-      needItems = true
-      await fs.mkdir('./items')
-    }
+    try { await fs.access('./items') } catch { needItems = true; await fs.mkdir('./items') }
     if (needItems) {
       await fs.writeFile('./ItemsVersion.properties', str)
-
       const response = await fetch(`https://empire-html5.goodgamestudios.com/default/items/items_v${str.match(new RegExp(/(?!.*=).*/))[0]}.json`)
       for (const [key, value] of Object.entries(await response.json())) {
-        if (!/^[A-Za-z\_]+$/.test(key))
-          continue
-
+        if (!/^[A-Za-z\_]+$/.test(key)) continue
         await fs.writeFile(`./items/${key}.json`, JSON.stringify(value))
       }
     }
   }
 
   async function getLangJSON() {
-    try {
-      await fs.access('./lang.json')
-    }
-    catch {
-      needLang = true
-    }
+    try { await fs.access('./lang.json') } catch { needLang = true }
     if (needLang) {
       const response = await fetch('https://empire-html5.goodgamestudios.com/config/languages/4018/en.json')
       const str = await response.text()
-
       await fs.writeFile('./lang.json', str)
     }
   }
   async function getServerXML() {
-    try {
-      await fs.access('./1.xml')
-    }
-    catch {
-      needLang = true
-    }
+    try { await fs.access('./1.xml') } catch { needLang = true }
     if (needLang) {
       const response = await fetch('https://empire-html5.goodgamestudios.com/config/network/1.xml')
       const str = await response.text()
-
       await fs.writeFile('./1.xml', str)
     }
   }
 
-  await getItemsJSON()
-  await getLangJSON()
-  await getServerXML()
+  await getItemsJSON(); await getLangJSON(); await getServerXML()
 
   const instances = []
-  const json = await parseStringPromise((await fs.readFile('./1.xml')).toString())
-  
-  json.network.instances[0].instance.forEach(e => 
-    instances.push({
-      gameURL: e.server[0],
-      gameServer: e.zone[0],
-      gameID: e['$'].value
-    }))
+  const xml = await parseStringPromise((await fs.readFile('./1.xml')).toString())
+  xml.network.instances[0].instance.forEach(e => 
+    instances.push({ gameURL: e.server[0], gameServer: e.zone[0], gameID: e['$'].value }))
 
   let pluginData = require('./plugins')
-
-  try {
-    pluginData = pluginData.concat(require('./plugins-extra'))
-  } catch {}
+  try { pluginData = pluginData.concat(require('./plugins-extra')) } catch {}
 
   const plugins = pluginData
     .filter(e => !e[1].hidden)
-    .map(e => new Object({ key: path.basename(e[0]), filename: e[0], name: e[1].name, description: e[1].description, force: e[1].force, pluginOptions: e[1]?.pluginOptions }))
+    .map(e => ({ key: path.basename(e[0]), filename: e[0], name: e[1].name, description: e[1].description, force: e[1].force, pluginOptions: e[1]?.pluginOptions }))
     .sort((a, b) => (a.force ?? 0) - (b.force ?? 0))
 
-  const loginCheck = uuid => 
-    !!userDatabase.prepare('SELECT * FROM Users WHERE uuid = ?').get(uuid ?? "")
+  const loginCheck = async userId => {
+    if (!userId || isNaN(userId)) return false;
+    return !!(await DBUser.findByPk(userId));
+  }
 
   const app = express()
   app.use(bodyParser.urlencoded({ extended: true }))
-  app.get('/', (_, res) => res.redirect('/index.html'))
-  app.get('/lang.json', (_, res) => { 
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.sendFile('lang.json', { root: '.' }) 
-  })
-  app.get('/1.xml', (_, res) => { 
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.sendFile('1.xml', { root: "." }) 
-  })
-  app.post('/api', bodyParser.json(), async (req, res) => {
-    let json = req.body
-
-    res.setHeader('Content-Type', 'application/json')
-    if (json.id == 0) {
-      const row = userDatabase.prepare('Select * FROM Users WHERE username = ?')
-        .get(json.email_name)
-      if (!row)
-        return res.send(JSON.stringify({ id: 0, r: 1, error: 'Invalid login details.' }))
-      
-      if (crypto.pbkdf2Sync(json.password, row.passwordSalt, 600000, 64, 'sha256').compare(row.passwordHash) == 0)
-        res.send(JSON.stringify({ id: 0, r: 0, uuid: row.uuid }))
-      else
-        res.send(JSON.stringify({ id: 0, r: 1, error: 'Invalid login details.'})) //TODO: sort this out server side
-    }
-    else if (json.id == 1) {
-      if (json.token != ggeConfig.signupToken)
-        return res.send(JSON.stringify({ id: 0, r: 1, error: 'Invalid Sign up details.' }))
-
-      const salt = crypto.randomBytes(256)
-      const passwordHash = crypto.pbkdf2Sync(json.password, salt, 600000, 64, 'sha256')
-      const uuid = crypto.randomUUID()
-      try {
-      userDatabase.prepare('INSERT INTO Users (username, passwordHash, passwordSalt, uuid) VALUES(?,?,?,?)')
-         .run(json.username, passwordHash, salt, uuid)
-          res.send(JSON.stringify({ r: 0, uuid: uuid }))
-      }
-      catch {
-          res.send(JSON.stringify({ r: 1 }))
-          console.error(err)
-      }
-    }
-  })
-
-  if (hasDiscord) {
-    await new Promise(resolve => {
-      client.once(Events.ClientReady, () => {
-        app.get('/discordAuth', async (request, response) => {
-          const tokenResponseData = await undici.request('https://discord.com/api/oauth2/token', {
-            method: 'POST',
-            body: new URLSearchParams({
-              client_id: ggeConfig.discordClientId,
-              client_secret: ggeConfig.discordClientSecret,
-              code: request.query.code,
-              grant_type: 'authorization_code',
-              redirect_uri: `${request.protocol}://${request.hostname}:${ggeConfig.webPort}/discordAuth`,
-              scope: 'identify',
-            }).toString(),
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            }
-          })
-
-          const oauthData = await tokenResponseData.body.json()
-          const userResult = await undici.request('https://discord.com/api/users/@me', {
-            headers: {
-              authorization: `${oauthData.token_type} ${oauthData.access_token}`,
-            }
-          })
-          let discordIdentifier = await userResult.body.json()
-          let guildId = request.query.guild_id
-          if (!discordIdentifier.id)
-            return response.send(i18n.__("missingDiscordID"))
-          if (!guildId)
-            return response.send(i18n.__("missingGuildID"))
-
-          let guild = client.guilds.cache.get(guildId)
-          let channelData = guild.channels.cache.map(channel => {
-            if (guild.members.me.permissionsIn(channel)
-              .has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]))
-              return { id: channel.id, name: channel.name }
-
-            return undefined
-          }).filter(e => e !== undefined)
-          let uuid = request.headers.cookie.split('; ').find(e => e.startsWith('uuid='))
-            .substring(5, Infinity)
-          let valid = loginCheck(uuid)
-          if (!valid)
-            return response.send(i18n.__("uuidInvalid"))
-
-          userDatabase.prepare('UPDATE Users SET discordUserId = ?, discordGuildId = ? WHERE uuid = ?')
-              .run(discordIdentifier.id, guildId, uuid)
-          
-          loggedInUsers[uuid].forEach(o =>
-            o.ws.send(JSON.stringify([ErrorType.Success, ActionType.GetChannels, [ggeConfig.discordClientId, channelData]])))
-          return response.send('Successful!') //close page instead
-        })
-      })
-      resolve()
-    })
-    client.login(ggeConfig.discordToken)
-  }
-
+  
+  const sessionMiddleware = session({
+    store: new pgSession({ 
+      pool: new Pool({
+        user: 'un1c4on',
+        password: 'un1c4on',
+        host: 'localhost',
+        port: 5433,
+        database: 'ggebot_db'
+      }), 
+      tableName: 'session', 
+      createTableIfMissing: true 
+    }),
+    secret: 'cok-gizli-super-guvenli-anahtar-1234',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { maxAge: 30 * 24 * 60 * 60 * 1000, httpOnly: true, secure: false }
+  });
+  app.use(sessionMiddleware)
   app.use(express.static('website/build'))
 
-  async function createBot(uuid, user, messageBuffer, messageBufferCount) {
-    messageBuffer ??= []
-    messageBufferCount ??= 0
-    if (user.id && botMap.get(user.id) != undefined)
-      throw Error(i18n.__("gameAccountSessionAlreadyInUse"))
+  app.get('/', (_, res) => res.redirect('/index.html'))
+  app.get('/lang.json', (_, res) => { res.setHeader('Access-Control-Allow-Origin', '*'); res.sendFile('lang.json', { root: '.' }) })
+  app.get('/1.xml', (_, res) => { res.setHeader('Access-Control-Allow-Origin', '*'); res.sendFile('1.xml', { root: "." }) })
+  
+  app.post('/api', bodyParser.json(), async (req, res) => {
+    let json = req.body
+    res.setHeader('Content-Type', 'application/json')
+    if (json.id == 0) {
+      const row = await DBUser.findOne({ where: { username: json.email_name } })
+      if (row && json.password === row.password_hash) {
+        req.session.userId = row.id; req.session.save();
+        return res.send(JSON.stringify({ id: 0, r: 0, uuid: row.id }))
+      }
+      return res.send(JSON.stringify({ id: 0, r: 1, error: 'Invalid login details.' }))
+    }
+    else if (json.id == 1) {
+      if (json.token != ggeConfig.signupToken) return res.send(JSON.stringify({ id: 0, r: 1, error: 'Invalid Sign up details.' }))
+      try {
+        const newUser = await DBUser.create({ username: json.username, email: json.username + "@example.com", password_hash: json.password })
+        res.send(JSON.stringify({ r: 0, uuid: newUser.id }))
+      } catch (err) { res.send(JSON.stringify({ r: 1 })); console.error(err) }
+    }
+  })
 
+  async function createBot(userId, user, messageBuffer, messageBufferCount) {
+    messageBuffer ??= []; messageBufferCount ??= 0
+    if (user.id && botMap.get(user.id)) throw Error(i18n.__("gameAccountSessionAlreadyInUse"))
     let data = structuredClone(user)
-
-    let discordCreds = uuid => {
-      const row = userDatabase.prepare('SELECT * FROM Users WHERE uuid = ?').get(uuid)
-      return row ? { discordGuildId: row.discordGuildId, discordUserId: row.discordUserId } : undefined
-    }
-    const discordData = discordCreds(uuid)
-    plugins.forEach(plugin =>
-      plugin.force ? (data.plugins[plugin.key] ??= {}).state = true : undefined)
-    plugins.forEach(plugin => 
-      data.plugins[plugin.key]?.state ? data.plugins[plugin.key].filename = plugin.filename : undefined)
-
+    const discordData = undefined
+    plugins.forEach(plugin => plugin.force ? (data.plugins[plugin.key] ??= {}).state = true : undefined)
+    plugins.forEach(plugin => data.plugins[plugin.key]?.state ? data.plugins[plugin.key].filename = plugin.filename : undefined)
     const instance = instances.find(e => Number(e.gameID) == data.server)
-
-    data.gameURL ??= instance.gameURL
-    data.gameServer ??= instance.gameServer
-    data.gameID ??= instance.gameID
-
-    if (user.externalEvent == true) {
-      let users = getUser(uuid)
-      let bot = users.find(e => user.name == e.id && user.id != e.id && e.state)
-      let getExternalEvent = (worker, alreadyStarted) => new Promise(resolve => { //TODO: add timed reject method
-        let func = (obj) => {
-          if (obj[0] != ActionType.GetExternalEvent)
-            return
-          resolve(obj[1])
-          worker.off('message', func)
-        }
-
-        worker.on('message', func)
-        
-        if (alreadyStarted)
-          return worker.postMessage([ActionType.GetExternalEvent])
-
-        let a = obj => {
-          if (obj[0] != ActionType.Started)
-            return
-
-          worker.postMessage([ActionType.GetExternalEvent])
-          worker.off('message', a)
-        }
-        worker.on('message', a)
-      })
-
-      if (bot) {
-        let worker = botMap.get(bot[0].id)
-
-        let data3 = await getExternalEvent(worker, true)
-
-        if (data3.ths.tsid == 24)
-          user.gameURL = 'EmpireEx_42'
-        
-        user.gameServer = 'ep-live-temp1-game.goodgamestudios.com'
-        user.tempServerData = data3
-      }
-      else {
-        let data2 = structuredClone(user)
-        plugins.forEach(plugin => 
-          plugin.force ? (data2.plugins[plugin.key] ??= {}).state = true : undefined)
-        plugins.forEach(plugin => 
-          data2.plugins[plugin.key]?.state ? data2.plugins[plugin.key].filename = plugin.filename : undefined)
-
-        data2.plugins = []
-        data2.externalEvent = false
-
-        data2.gameURL ??= instance.gameURL
-        data2.gameServer ??= instance.gameServer
-        data2.gameID ??= instance.gameID
-
-        const worker = new Worker('./ggebot.js', { workerData: { ...data2, discordData } })
-        worker.messageBuffer = messageBuffer
-        worker.messageBufferCount = messageBufferCount
-        worker.on('message', async obj => {
-          switch (obj[0]) {
-            case ActionType.GetLogs:
-              if (!uuid)
-                break
-              worker.messageBuffer[worker.messageBufferCount] = obj[1]
-              worker.messageBufferCount = (worker.messageBufferCount + 1) % 25
-              loggedInUsers[uuid]?.forEach(o => {
-                if (o.viewedUser == user.id)
-                  o.ws.send(JSON.stringify([ErrorType.Success, ActionType.GetLogs,
-                  [worker.messageBuffer, worker.messageBufferCount]]))
-              })
-              break
-          }
-        })
-        let data3 = await getExternalEvent(worker)
-
-        let tempServerEvent = data3.sei.E.find(e => e.EID == 106)
-        if (data3.glt.TSIP && data3.glt.TSZ) {
-          data.gameURL = `${data3.glt.TSIP}`
-          data.gameServer = data3.glt.TSZ
-        }
-        else if (tempServerEvent?.TSID == 24) {
-          data.gameServer = 'EmpireEx_42'
-          data.gameURL = 'ep-live-temp1-game.goodgamestudios.com'
-        }
-        else if (tempServerEvent?.TSID == 21) {
-          data.gameServer = 'EmpireEx_42'
-          data.gameURL = 'ep-live-temp1-game.goodgamestudios.com'
-        }
-        else if (data3.sei.E.find(e => e.EID == 113)) {
-          data.gameServer = 'EmpireEx_45'
-          data.gameURL = 'ep-live-battle1-game.goodgamestudios.com'
-        }
-        else {
-          console.error(i18n.__("failedToJoinEventServer"))
-          return await worker.terminate()
-        }
-        data.tempServerData = data3
-        await worker.terminate()
-      }
-    }
+    data.gameURL ??= instance?.gameURL; data.gameServer ??= instance?.gameServer; data.gameID ??= instance?.gameID
 
     const worker = new Worker('./ggebot.js', { workerData: { ...data, discordData } })
+    worker.messageBuffer = messageBuffer; worker.messageBufferCount = messageBufferCount
+    if (user.id) botMap.set(user.id, worker)
 
-    worker.messageBuffer = messageBuffer
-    worker.messageBufferCount = messageBufferCount
-
-    if (user.id)
-      botMap.set(user.id, worker)
-
-    const onTerminate = () => {
+    const onTerminate = async () => {
       if (botMap.get(user.id) == worker) {
         botMap.set(user.id, undefined)
-        if (getSpecificUser(uuid, user).state == true) {
-          console.debug(`[${user.name}] ${i18n.__("restartDelay")}`)
-          setTimeout(() => {
-             // Re-fetch user state to ensure they didn't turn it off during the 10s wait
-             user = getSpecificUser(uuid, user)
-             if (user && user.state == true) {
-                 createBot(uuid, user, worker.messageBuffer, worker.messageBufferCount)
-             } else {
-                 console.debug(`[${user.name}] ${i18n.__("restartCanceledReasonBotStoppedByUser")}`)
-             }
+        const u = await getSpecificUser(userId, user)
+        if (u && u.state == 1) {
+          setTimeout(async () => {
+            const u2 = await getSpecificUser(userId, user)
+            if (u2 && u2.state == 1) createBot(userId, u2, worker.messageBuffer, worker.messageBufferCount)
           }, 10000)
         }
       }
     }
-
-    worker.on('message', obj => {
+    worker.on('message', async obj => {
       switch (obj[0]) {
         case ActionType.KillBot:
-          userDatabase.prepare('UPDATE SubUsers SET state = ? WHERE id = ?').run(0, user.id)
+          await GameAccount.update({ is_active: false }, { where: { id: user.id } })
           removeBot(user.id)
-          
-          loggedInUsers[uuid]?.forEach(({ws}) => 
-              ws.send(JSON.stringify([ErrorType.Success, ActionType.GetUsers, [getUser(uuid), plugins]])))
+          loggedInUsers[userId]?.forEach(async ({ws}) => ws.send(JSON.stringify([ErrorType.Success, ActionType.GetUsers, [await getUser(userId), plugins]])))
           break
         case ActionType.GetLogs:
           worker.messageBuffer[worker.messageBufferCount] = obj[1]
           worker.messageBufferCount = (worker.messageBufferCount + 1) % 25
-          loggedInUsers[uuid]?.forEach(o => 
-              o.viewedUser == user.id ? o.ws.send(JSON.stringify([
-                ErrorType.Success, 
-                ActionType.GetLogs,
-                [worker.messageBuffer, worker.messageBufferCount]
-              ])) : undefined)
+          loggedInUsers[userId]?.forEach(o => o.viewedUser == user.id ? o.ws.send(JSON.stringify([ErrorType.Success, ActionType.GetLogs, [worker.messageBuffer, worker.messageBufferCount]])) : undefined)
           break
         case ActionType.StatusUser:
           obj[1].id = user.id
-          loggedInUsers[uuid]?.forEach(o =>
-            o.ws.send(JSON.stringify([ErrorType.Success, ActionType.StatusUser, obj[1]])))
+          loggedInUsers[userId]?.forEach(o => o.ws.send(JSON.stringify([ErrorType.Success, ActionType.StatusUser, obj[1]])))
           break
         case ActionType.RemoveUser:
-          worker.off('exit', onTerminate)
-          removeUser(uuid, user)
+          worker.off('exit', onTerminate); await removeUser(userId, user)
           break
         case ActionType.SetUser:
-          userDatabase.prepare('UPDATE SubUsers SET pass = ? WHERE uuid = ? AND id = ?')
-            .run(obj[1], uuid, user.id)
+          await GameAccount.update({ game_password_encrypted: obj[1] }, { where: { id: user.id } })
           break
       }
     })
-
     worker.on('exit', onTerminate)
-
     await new Promise(resolve => {
-      const func = obj => {
-        if (obj[0] != ActionType.Started)
-          return
-        resolve()
-        worker.once('exit', resolve)
-        worker.off('message', func)
-      }
-
-      worker.on('message', func)
+      const func = obj => { if (obj[0] == ActionType.Started) { resolve(); worker.off('message', func) } }
+      worker.on('message', func); worker.once('exit', resolve)
     })
-
     return worker
   }
 
   const removeBot = id => {
     const worker = botMap.get(id)
-
-    if (worker == undefined)
-      throw i18n.__("noThreadWorker")
-
-    botMap.delete(id)
-    worker.terminate()
+    if (worker) { botMap.delete(id); worker.terminate() }
   }
 
-  const users = getUser()
-  for (let i = 0; i < users.length; i++) {
-    const user = users[i]
-
-    if (user.state != 0)
-      createBot(user.uuid, user)
-  }
+  const allUsers = await getUser()
+  for (const u of allUsers) { if (u.state != 0) createBot(u.UserId, u) }
 
   const wss = new WebSocketServer({ noServer: true })
   const options = {}
-
   if (certFound) {
     options.key = await fs.readFile(ggeConfig.privateKey, 'utf8')
     options.cert = await fs.readFile(ggeConfig.cert, 'utf8')
   }
 
-  const socket = (certFound ? https : http)
-    .createServer(options, app).listen(ggeConfig.webPort)
-
-  socket.on('upgrade', (req, socket, head) =>
-    wss.handleUpgrade(req, socket, head, socket =>
-      wss.emit('connection', socket, req)))
-
-  wss.addListener('connection', (ws, req) => {
-    const refreshUsers = () =>
-      ws.send(JSON.stringify([ErrorType.Success, ActionType.GetUsers, [getUser(uuid), plugins]]))
-
-    let uuid = req.headers.cookie?.split('; ').find(e => e.startsWith('uuid='))
-      .substring(5, Infinity)
-
-    if (!loginCheck(uuid))
-      return ws.send(JSON.stringify([ErrorType.Unauthenticated, ActionType.GetUUID, {}]))
-
-    loggedInUsers[uuid] ??= []
-    loggedInUsers[uuid].push({ ws })
-
-    refreshUsers()
-
-    let users = getUser(uuid)
-    users.forEach(user => {
-      if (user.state != 1)
-        return
-
-      let worker = botMap.get(user.id)
-      if (worker == undefined)
-        return
-
-      worker.postMessage([ActionType.StatusUser])
-    })
-    if (hasDiscord) {
-      const row = userDatabase.prepare('SELECT * FROM Users WHERE uuid = ?').get(uuid)
-      try {
-        if (!row.discordGuildId)
-          throw i18n.__("missingGuildID")
-        if (!row.discordUserId)
-          throw i18n.__("missingDiscordUserID")
-
-        let guild = client.guilds.cache.get(row.discordGuildId)
-        let channelData = guild.channels.cache.map(channel => {
-          if (guild.members.me.permissionsIn(channel)
-            .has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]))
-            return { id: channel.id, name: channel.name }
-
-          return undefined
-        }).filter((e) => e !== undefined)
-        ws.send(JSON.stringify([ErrorType.Success, ActionType.GetChannels, [ggeConfig.discordClientId, channelData]]))
-      }
-      catch (e) {
-        ws.send(JSON.stringify([ErrorType.Success, ActionType.GetChannels, 
-          [ggeConfig.discordClientId, ggeConfig.discordPort, undefined]]))
-        console.error(e)
-      }
-    }
-
-    ws.addListener('message', async event => {
-      let [_, action, obj] = JSON.parse(event.toString())
-
-      switch (action) {
-        case ActionType.GetUsers: {
-          refreshUsers()
-          break
-        }
-        case ActionType.StatusUser: {
-          break
-        }
-        case ActionType.AddUser: {
-          addUser(uuid, new User(obj))
-          refreshUsers()
-          break
-        }
-        case ActionType.RemoveUser: {
-          let lastError = undefined
-          for (let i = 0; i < obj.length; i++) {
-            const user = obj[i]
-            try {
-              removeUser(uuid, user)
-            }
-            catch (e) {
-              lastError = e
-            }
-          }
-          if (lastError) {
-            console.warn(lastError)
-            ws.send(JSON.stringify([ErrorType.Generic, ActionType.RemoveUser, {}]))
-          }
-          refreshUsers()
-          break
-        }
-        case ActionType.SetUser: {
-          let oldUser = getSpecificUser(uuid, new User(obj))
-          let user = changeUser(uuid, new User(obj))
-          if (user.state == 0) {
-            try {
-              removeBot(user.id)
-            } catch (e) {
-              console.warn(e)
-            }
-          }
-          else {
-            let worker = botMap.get(user.id)
-            if (worker == undefined)
-              worker = await createBot(uuid, user)
-            else {
-              let restartedUser = false
-              for (const [key, value] of Object.entries(oldUser.plugins)) {
-                if (user.plugins[key].state == value.state)
-                  continue
-                restartedUser = true
-                removeBot(user.id)
-                worker = await createBot(uuid, user, worker.messageBuffer, worker.messageBufferCount)
-                break
-              }
-              if (!restartedUser) {
-                let data = structuredClone(user)
-
-                plugins.forEach(plugin => plugin.force ? (data.plugins[plugin.key] ??= {}).state = true : void 0)
-                plugins.forEach(plugin => data.plugins[plugin.key]?.state ? data.plugins[plugin.key].filename = plugin.filename : void 0)
-                worker.postMessage([ActionType.SetPluginOptions, data])
-              }
-            }
-          }
-          loggedInUsers[uuid]?.forEach(({ ws }) =>
-            ws.send(JSON.stringify([ErrorType.Success, ActionType.GetUsers, [getUser(uuid), plugins]])))
-          break
-        }
-        case ActionType.GetLogs: {
-          if (!obj) {
-            loggedInUsers[uuid].find(o => o.ws == ws).viewedUser = undefined
-            break
-          }
-          const user = new User(obj)
-          const worker = botMap.get(user.id)
-
-          if (worker == undefined)
-            return ws.send(JSON.stringify([ErrorType.Generic, ActionType.GetLogs, {}]))
-          
-          let loggedInUser = loggedInUsers[uuid].find(obj => obj.ws == ws)
-          loggedInUser.viewedUser = user.id
-          loggedInUser.ws.send(JSON.stringify([ErrorType.Success, ActionType.GetLogs, 
-            [worker.messageBuffer, worker.messageBufferCount]]))
-          break
-        }
-        default:
-          ws.send(JSON.stringify([ErrorType.UnknownAction, ActionType.Unknown, {}]))
-      }
-    })
-    ws.addListener('close', () => {
-      if (!uuid)
-        return
-      let index = loggedInUsers[uuid].findIndex((obj) => obj.ws == ws)
-      if (index == -1)
-        throw Error(i18n.__("couldntFindWebClientIndex"))
-
-      loggedInUsers[uuid].splice(index, 1)
-
-      if (loggedInUsers[uuid].length == 0)
-        loggedInUsers[uuid] = undefined
+  const server = (certFound ? https : http).createServer(options, app).listen(ggeConfig.webPort)
+  server.on('upgrade', (req, socket, head) => {
+    sessionMiddleware(req, {}, () => {
+      wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req))
     })
   })
 
+  wss.addListener('connection', async (ws, req) => {
+    let userId = req.session?.userId || req.headers.cookie?.split('; ').find(e => e.startsWith('uuid='))?.substring(5, Infinity)
+    
+    const refreshUsers = async () => {
+        if (!userId || isNaN(userId)) return;
+        ws.send(JSON.stringify([ErrorType.Success, ActionType.GetUsers, [await getUser(userId), plugins]]))
+    }
+
+    if (!userId || isNaN(userId) || !(await loginCheck(userId))) return ws.send(JSON.stringify([ErrorType.Unauthenticated, ActionType.GetUUID, {}]))
+    
+    loggedInUsers[userId] ??= []; loggedInUsers[userId].push({ ws })
+    await refreshUsers()
+
+    ws.addListener('message', async event => {
+      let [_, action, obj] = JSON.parse(event.toString())
+      switch (action) {
+        case ActionType.GetUsers: await refreshUsers(); break
+        case ActionType.AddUser: await addUser(userId, new User(obj)); await refreshUsers(); break
+        case ActionType.RemoveUser:
+          for (const u of obj) { try { await removeUser(userId, u) } catch (e) { console.warn(e) } }
+          await refreshUsers(); break
+        case ActionType.SetUser:
+          const activePluginCount = Object.keys(obj.plugins || {}).length;
+          console.debug(`[${obj.name}] Received SetUser. Active plugins: ${activePluginCount}`);
+          let oldU = await getSpecificUser(userId, new User(obj))
+          let newU = await changeUser(userId, new User(obj))
+          if (!newU) return
+          if (newU.state == 0) { try { removeBot(newU.id) } catch (e) {} }
+          else {
+            let w = botMap.get(newU.id)
+            if (!w) await createBot(userId, newU)
+            else {
+              let restarted = false
+              for (const [k, v] of Object.entries(oldU.plugins)) {
+                if (newU.plugins[k].state != v.state) { restarted = true; removeBot(newU.id); await createBot(userId, newU, w.messageBuffer, w.messageBufferCount); break }
+              }
+              if (!restarted) {
+                let d = structuredClone(newU)
+                plugins.forEach(p => p.force ? (d.plugins[p.key] ??= {}).state = true : void 0)
+                plugins.forEach(p => d.plugins[p.key]?.state ? d.plugins[p.key].filename = p.filename : void 0)
+                w.postMessage([ActionType.SetPluginOptions, d])
+              }
+            }
+          }
+          loggedInUsers[userId]?.forEach(async ({ ws }) => ws.send(JSON.stringify([ErrorType.Success, ActionType.GetUsers, [await getUser(userId), plugins]])))
+          break
+        case ActionType.GetLogs:
+          if (!obj) { loggedInUsers[userId].find(o => o.ws == ws).viewedUser = undefined; break }
+          const u = new User(obj); const w = botMap.get(u.id)
+          if (!w) return ws.send(JSON.stringify([ErrorType.Generic, ActionType.GetLogs, {}]))
+          let lUser = loggedInUsers[userId].find(o => o.ws == ws)
+          lUser.viewedUser = u.id
+          lUser.ws.send(JSON.stringify([ErrorType.Success, ActionType.GetLogs, [w.messageBuffer, w.messageBufferCount]]))
+          break
+      }
+    })
+    ws.addListener('close', () => {
+      if (!userId) return
+      let idx = loggedInUsers[userId]?.findIndex(o => o.ws == ws)
+      if (idx > -1) loggedInUsers[userId].splice(idx, 1)
+      if (loggedInUsers[userId]?.length == 0) delete loggedInUsers[userId]
+    })
+  })
   console.info(i18n.__("started"))
 }
 
 start()
-
-module.exports = {
-  loggedInUsers,
-  botMap,
-  userDatabase,
-  changeUser,
-  getUser,
-  removeUser
-}
+module.exports = { loggedInUsers, botMap, changeUser, getUser, removeUser }
