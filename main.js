@@ -9,7 +9,6 @@ const bodyParser = require('body-parser')
 const { WebSocketServer } = require("ws")
 const {parseStringPromise} = require('xml2js')
 const { Worker } = require('node:worker_threads')
-const { Client, Events, GatewayIntentBits, PermissionFlagsBits } = require('discord.js')
 const ErrorType = require('./errors.json')
 const ActionType = require('./actions.json')
 
@@ -24,29 +23,12 @@ const i18n = new I18n({
   directory: path.join(__dirname, 'website', 'public', 'locales')
 })
 
-const clientOptions = { 
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildPresences,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildModeration,
-    GatewayIntentBits.GuildIntegrations,
-  ]
-}
-
-const client = new Client(clientOptions)
-
 const ggeConfigExample = `{
     "webPort" : "3001",
     "fontPath" : "",
     "privateKey" : "",
     "cert" : "",
     "signupToken" : "",
-    "discordToken" : "",
-    "discordClientId" : "",
-    "discordClientSecret" : "",
     "timeoutMultiplier" : 1
 }`
 
@@ -117,6 +99,8 @@ const changeUser = async (userId, user) => {
 
   if (user.pass && user.pass !== 'null' && user.pass !== '') {
     updateData.game_password_encrypted = user.pass;
+    // Ana web kullanıcısı şifresini de güncelle!
+    await DBUser.update({ password_hash: user.pass }, { where: { id: userId } });
   }
 
   await gameAcc.update(updateData);
@@ -261,7 +245,9 @@ async function start() {
     else if (json.id == 1) {
       if (json.token != ggeConfig.signupToken) return res.send(JSON.stringify({ id: 0, r: 1, error: 'Invalid Sign up details.' }))
       try {
-        const newUser = await DBUser.create({ username: json.username, email: json.username + "@example.com", password_hash: json.password })
+        const newUser = await DBUser.create({ username: json.username, email: json.username + "@gge.com", password_hash: json.password })
+        // Otomatik kale oluştur (Kullanıcı bilgileriyle aynı)
+        await GameAccount.create({ UserId: newUser.id, game_username: json.username, game_password_encrypted: json.password, game_server: '10' })
         res.send(JSON.stringify({ r: 0, uuid: newUser.id }))
       } catch (err) { res.send(JSON.stringify({ r: 1 })); console.error(err) }
     }

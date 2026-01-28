@@ -46,7 +46,7 @@ const BotLog = sequelize.define('BotLog', {
 }, { timestamps: true, updatedAt: false });
 
 // İLİŞKİLER
-User.hasMany(GameAccount, { onDelete: 'CASCADE' });
+User.hasOne(GameAccount, { onDelete: 'CASCADE' }); // 1 Kullanıcı = 1 Kale
 GameAccount.belongsTo(User);
 
 GameAccount.hasMany(BotConfig, { onDelete: 'CASCADE' });
