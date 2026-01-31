@@ -1,10 +1,25 @@
 const { isMainThread } = require('node:worker_threads')
+const { getPresetOptions } = require('./presets')
+
 const name = "Attack Aqua Forts"
 
-if (isMainThread)
+if (isMainThread) {
+    const presetOptions = getPresetOptions();
     return module.exports = {
         name: name,
         pluginOptions: [
+            {
+                type: "Select",
+                label: "Max Waves",
+                key: "maxWaves",
+                selection: [
+                    "1 Wave",
+                    "2 Waves",
+                    "3 Waves",
+                    "4 Waves"
+                ],
+                default: 0 // 0 index = 1 Wave
+            },
             {
                 type: "Text",
                 label: "Com White List",
@@ -40,19 +55,17 @@ if (isMainThread)
                 key: "buydeco",
                 default: false
             },
-            {
-                type: "Checkbox",
-                label: "Buy XP",
-                key: "buyxp",
-                default: false
-            }]
+            ...presetOptions
+        ]
     }
+}
 
 const { getCommanderStats } = require("../../getEquipment")
 const { Types, getResourceCastleList, ClientCommands, areaInfoLock, AreaType, KingdomID } = require('../../protocols')
-const { waitToAttack, getAttackInfo, assignUnit, getAmountSoldiersFlank } = require("./attack")
+const { waitToAttack, getAttackInfo, assignUnit, getAmountSoldiersFlank, sleep, boxMullerRandom } = require("./attack")
 const { movementEvents, waitForCommanderAvailable, freeCommander, useCommander } = require("../commander")
 const { sendXT, waitForResult, xtHandler, botConfig, events } = require("../../ggebot")
+const { applyPreset } = require("../../plugins/attack/presets")
 const getAreaCached = require('../../getmap.js')
 const err = require("../../err.json")
 const units = require("../../items/units.json")
@@ -97,6 +110,11 @@ function spiralCoordinates(n) {
 const pluginOptions = 
     botConfig.plugins[require('path').basename(__filename).slice(0, -3)] ?? {}
 
+pluginOptions.useGamePreset ??= false;
+pluginOptions.presetID ??= "0";
+// Default to 1 wave (index 0) if not set
+pluginOptions.maxWaves = pluginOptions.maxWaves !== undefined ? Number(pluginOptions.maxWaves) : 0;
+
 const kid = KingdomID.stormIslands
 const type = AreaType.stormTower
 
@@ -130,13 +148,6 @@ events.once("load", async () => {
                 castleProd.aqua -= 500000
                 sendXT("sbp", JSON.stringify({ "PID": 3117, "BT": 3, "TID": -1, "AMT": 1, "KID": 4, "AID": -1, "PC2": -1, "BA": 0, "PWR": 0, "_PO": -1 }))
                 console.info(`[${name}] Buying Deco`)
-            }
-        }
-        if (pluginOptions["buyxp"]) {
-            for (let i = 0; i < Math.floor(castleProd.aqua / 10000); i++) {
-                castleProd.aqua -= 10000
-                sendXT("sbp", JSON.stringify({ "PID": 3114, "BT": 3, "TID": -1, "AMT": 1, "KID": 4, "AID": -1, "PC2": -1, "BA": 0, "PWR": 0, "_PO": -1 }))
-                console.info(`[${name}] Got XP`)
             }
         }
     })
@@ -178,7 +189,7 @@ events.once("load", async () => {
             return
         movements.splice(index, 1)
     })
-    //Gotta detect cooling down towers
+    
     const sendHit = async () => {
         let comList = undefined
         if (![, ""].includes(pluginOptions.commanderWhiteList)) {
@@ -191,6 +202,11 @@ events.once("load", async () => {
 
         try {
             const attackInfo = await waitToAttack(async () => {
+                const executionStartTime = Date.now();
+
+                // Human-like hesitation (2-3 seconds)
+                await sleep(boxMullerRandom(2000, 3000, 1));
+
                 const sourceCastle = (await ClientCommands.getDetailedCastleList()())
                     .castles.find(a => a.kingdomID == kid)
                     .areaInfo.find(a => a.areaID == sourceCastleArea.extraData[0])
@@ -240,50 +256,64 @@ events.once("load", async () => {
                 }
                 const level = toLevel[AI.extraData[2]]
 
-                const attackInfo = getAttackInfo(kid, sourceCastleArea, AI, commander, level, undefined, pluginOptions.useCoin)
+                // maxWaves: 0 -> 1 wave, 1 -> 2 waves, etc.
+                const maxWaves = pluginOptions.maxWaves + 1;
+                const attackInfo = getAttackInfo(kid, sourceCastleArea, AI, commander, level, maxWaves, pluginOptions.useCoin)
 
                 attackInfo.LP = 3
-                const attackerMeleeTroops = []
-                const attackerRangeTroops = []
 
-                for (let i = 0; i < sourceCastle.unitInventory.length; i++) {
-                    const unit = sourceCastle.unitInventory[i]
-                    const unitInfo = units.find(obj => unit.unitID == obj.wodID)
-                    if (unitInfo == undefined)
-                        continue
-
-                    if (unitInfo.fightType == 0) {
-                        if (unitInfo.role == "melee")
-                            attackerMeleeTroops.push([unitInfo, unit.ammount])
-                        else if (unitInfo.role == "ranged")
-                            attackerRangeTroops.push([unitInfo, unit.ammount])
+                // --- PRESET LOGIC ---
+                if (pluginOptions.useGamePreset) {
+                    const presetResult = applyPreset(attackInfo, pluginOptions.presetID, maxWaves);
+                    if (!presetResult.success) {
+                        console.warn(`[${name}] Preset Error: ${presetResult.error}`);
+                        throw "PRESET_ERROR: " + presetResult.error;
                     }
+                    console.log(`[${name}] Game Preset Applied (ID: ${pluginOptions.presetID}, Waves: ${maxWaves})`);
+                } else {
+                    const attackerMeleeTroops = []
+                    const attackerRangeTroops = []
+
+                    for (let i = 0; i < sourceCastle.unitInventory.length; i++) {
+                        const unit = sourceCastle.unitInventory[i]
+                        const unitInfo = units.find(obj => unit.unitID == obj.wodID)
+                        if (unitInfo == undefined)
+                            continue
+
+                        if (unitInfo.fightType == 0) {
+                            if (unitInfo.role == "melee")
+                                attackerMeleeTroops.push([unitInfo, unit.ammount])
+                            else if (unitInfo.role == "ranged")
+                                attackerRangeTroops.push([unitInfo, unit.ammount])
+                        }
+                    }
+
+                    let allTroopCount = 0
+
+                    attackerRangeTroops.forEach(e => allTroopCount += e[1])
+                    attackerMeleeTroops.forEach(e => allTroopCount += e[1])
+
+                    if (allTroopCount < minTroopCount)
+                        throw "NO_MORE_TROOPS"
+
+                    attackInfo.A.forEach((wave, i) => {
+                        // Seçilen dalga sayısını geçme
+                        if(i >= maxWaves)
+                            return
+                        const commanderStats = getCommanderStats(commander)
+                        const maxTroopFlank = getAmountSoldiersFlank(level) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100
+                        
+                        let maxTroops = maxTroopFlank
+
+                        wave.L.U.forEach((unitSlot, i) =>
+                            maxTroops -= assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
+                                attackerRangeTroops : attackerMeleeTroops, maxTroops))
+                        maxTroops = maxTroopFlank
+                        wave.R.U.forEach((unitSlot, i) =>
+                            maxTroops -= assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
+                                attackerRangeTroops : attackerMeleeTroops, maxTroops))
+                    })
                 }
-
-                let allTroopCount = 0
-
-                attackerRangeTroops.forEach(e => allTroopCount += e[1])
-                attackerMeleeTroops.forEach(e => allTroopCount += e[1])
-
-                if (allTroopCount < minTroopCount)
-                    throw "NO_MORE_TROOPS"
-
-                attackInfo.A.forEach((wave, i) => {
-                    if(i > 4)
-                        return
-                    const commanderStats = getCommanderStats(commander)
-                    const maxTroopFlank = getAmountSoldiersFlank(level) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100
-                    
-                    let maxTroops = maxTroopFlank
-
-                    wave.L.U.forEach((unitSlot, i) =>
-                        maxTroops -= assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
-                            attackerRangeTroops : attackerMeleeTroops, maxTroops))
-                    maxTroops = maxTroopFlank
-                    wave.R.U.forEach((unitSlot, i) =>
-                        maxTroops -= assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
-                            attackerRangeTroops : attackerMeleeTroops, maxTroops))
-                })
 
                 await areaInfoLock(() => sendXT("cra", JSON.stringify(attackInfo)))
 
@@ -295,7 +325,9 @@ events.once("load", async () => {
                         return false
                     return true
                 })
-                return {...obj, result: r}
+                
+                const executionDuration = ((Date.now() - executionStartTime) / 1000).toFixed(2);
+                return {...obj, result: r, executionDuration}
             })
             
             if (!attackInfo) {
@@ -305,7 +337,7 @@ events.once("load", async () => {
             if(attackInfo.result != 0)
                 throw err[attackInfo.result]
 
-            console.info(`[${name}] Hitting target C${attackInfo.AAM.UM.L.VIS + 1} ${attackInfo.AAM.M.TA[1]}:${attackInfo.AAM.M.TA[2]} ${pretty(Math.round(1000000000 * Math.abs(Math.max(0, attackInfo.AAM.M.TT - attackInfo.AAM.M.PT))), 's') + " till impact"}`)
+            console.info(`[${name}] Hitting target C${attackInfo.AAM.UM.L.VIS + 1} ${attackInfo.AAM.M.TA[1]}:${attackInfo.AAM.M.TA[2]} ${pretty(Math.round(1000000000 * Math.abs(Math.max(0, attackInfo.AAM.M.TT - attackInfo.AAM.M.PT))), 's') + " till impact"} (Setup: ${attackInfo.executionDuration}s)`)
             return true
         } catch (e) {
             freeCommander(commander.lordID)
@@ -332,6 +364,7 @@ events.once("load", async () => {
             }
         }
     }
+    // ... Spiral döngüsü aynı kaldı ...
     done:
     for (let i = 0, j = 0; i < 13 * 13; i++) {
         let rX, rY

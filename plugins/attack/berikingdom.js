@@ -1,8 +1,10 @@
 const { isMainThread } = require('node:worker_threads')
+const { getPresetOptions } = require('./presets')
 
 const name = "Attack Berimond Kingdom"
 
 if (isMainThread) {
+    const presetOptions = getPresetOptions();
     module.exports = {
         name: name,
         description: "Hardcoded Attack + Fixed Transfer Logic",
@@ -35,7 +37,22 @@ if (isMainThread) {
                 label: "Use Coin (Gold Horse)",
                 key: "useCoin",
                 default: false
-            }
+            },
+            {
+                type: "Checkbox",
+                label: "Smart Unit Replacement",
+                description: "If the planned unit is missing, replace with the strongest available unit of the same role.",
+                key: "smartUnitReplacement",
+                default: true
+            },
+            {
+                type: "TextArea",
+                label: "Attack Plan JSON",
+                description: "Paste the JSON from Attack Designer here.",
+                key: "customAttackPlan",
+                default: "[]"
+            },
+            ...presetOptions
         ]
     }
     return; 
@@ -47,6 +64,7 @@ const { Types, getResourceCastleList, ClientCommands, areaInfoLock, AreaType, Ki
 const { waitToAttack, getAttackInfo, assignUnit, getAmountSoldiersFlank, getAmountSoldiersFront, getTotalAmountToolsFlank, getTotalAmountToolsFront, getMaxUnitsInReinforcementWave, sleep, boxMullerRandom } = require("../../plugins/attack/attack")
 const { waitForCommanderAvailable, freeCommander, useCommander, movementEvents } = require("../../plugins/commander")
 const { sendXT, waitForResult, xtHandler, events, botConfig, playerInfo } = require("../../ggebot")
+const { applyPreset } = require("../../plugins/attack/presets") // NEW IMPORT
 const units = require("../../items/units.json")
 const pretty = require('pretty-time')
 
@@ -55,6 +73,11 @@ pluginOptions.useFeather ??= false
 pluginOptions.useCoin ??= false
 pluginOptions.transferWeakTroops ??= true
 pluginOptions.useTimeSkips ??= true
+pluginOptions.smartUnitReplacement ??= true
+pluginOptions.customAttackPlan ??= "[]"
+pluginOptions.useGamePreset ??= false 
+pluginOptions.presetID ??= "0"
+pluginOptions.maxWaves ??= 3 
 
 const kid = KingdomID.berimond
 const eventID = 3
@@ -168,10 +191,52 @@ const transferTroopsLogic = async () => {
     } catch(e) { console.error(`[${name}] Transfer Error:`, e) }
 }
 
+// --- INVENTORY SYNC LOGIC ---
+let cachedSourceCastle = null;
+
+const syncInventoryLogic = async () => {
+    try {
+        const rcl = await getResourceCastleList();
+        const beriCastleArea = rcl.castles.find(e => e.kingdomID == kid)?.areaInfo.find(e => e.type == AreaType.beriCastle);
+        
+        if (!beriCastleArea) return;
+
+        // Fetch detailed info
+        const dcl = await ClientCommands.getDetailedCastleList()();
+        const castle = dcl.castles.find(a => a.kingdomID == kid)?.areaInfo.find(a => a.areaID == beriCastleArea.extraData[0]);
+
+        if (castle) {
+            cachedSourceCastle = castle; // Update global cache for attack loop
+            const { syncStatus } = require("../../ggebot");
+            
+            let inventoryForUI = [];
+            castle.unitInventory.forEach(u => {
+                const unitInfo = units.find(obj => u.unitID == obj.wodID)
+                if (!unitInfo || u.ammount <= 0) return;
+                inventoryForUI.push({ 
+                    wodID: u.unitID, 
+                    count: u.ammount, 
+                    category: (unitInfo.role == "melee" || unitInfo.role == "ranged") ? 'unit' : 'tool' 
+                });
+            });
+
+            // Send to UI immediately - Removed as per user request
+            // syncStatus({ inventory: inventoryForUI });
+        }
+    } catch (e) { console.error(`[${name}] Inventory Sync Error:`, e); }
+};
+
 const startLogic = async () => {
     console.log(`[${name}] Logic Started.`)
-    await transferTroopsLogic(); 
-    setInterval(transferTroopsLogic, 15 * 60 * 1000);
+    
+    // 1. Start Background Tasks
+    // Run immediately
+    transferTroopsLogic(); 
+    syncInventoryLogic();
+
+    // Set Intervals
+    setInterval(transferTroopsLogic, 15 * 60 * 1000); // Every 15m
+    setInterval(syncInventoryLogic, 30 * 1000);       // Every 30s
 
     await getKingdomInfoList(); 
     let resourceCastleList = await getResourceCastleList()
@@ -179,15 +244,23 @@ const startLogic = async () => {
 
     while (true) {
         try {
+            // Ensure we have the target castle area info
             if (!sourceCastleArea) {
                  const rcl = await getResourceCastleList()
                  sourceCastleArea = rcl.castles.find(e => e.kingdomID == kid)?.areaInfo.find(e => e.type == AreaType.beriCastle);
                  if(!sourceCastleArea) { await sleep(10000); continue; }
             }
 
-            const sourceCastle = (await ClientCommands.getDetailedCastleList()())
-                .castles.find(a => a.kingdomID == kid)
-                .areaInfo.find(a => a.areaID == sourceCastleArea.extraData[0])
+            // Use the cached castle data from syncLogic if available, otherwise fetch
+            let sourceCastle = cachedSourceCastle;
+            if (!sourceCastle) {
+                // Fallback if sync hasn't run yet
+                sourceCastle = (await ClientCommands.getDetailedCastleList()())
+                    .castles.find(a => a.kingdomID == kid)
+                    ?.areaInfo.find(a => a.areaID == sourceCastleArea.extraData[0])
+            }
+
+            if (!sourceCastle) { await sleep(5000); continue; }
 
             let availableTroops = [];
             let inventoryLog = [];
@@ -199,21 +272,13 @@ const startLogic = async () => {
                     availableTroops.push([unitInfo, u.ammount]);
                     inventoryLog.push(`${u.unitID}: ${u.ammount}`);
                 }
-            });
+            })
 
             let totalStrong = availableTroops.reduce((a,b)=>a+b[1],0);
-            if (inventoryLog.length > 0) console.log(`[${name}] Inventory: [${inventoryLog.join(", ")}] (Total: ${totalStrong})`)
-
-            // MINIMUM 30 ASKER ŞARTI (Saldırı için)
+            
             if (totalStrong < 30) {
                 console.log(`[${name}] Not enough troops (${totalStrong}/30). Waiting 15s...`)
                 await sleep(15000); 
-                continue;
-            }
-
-            if (totalStrong < 60) {
-                console.log(`[${name}] Low troops (${totalStrong}). Waiting 5s...`)
-                await sleep(5000); 
                 continue;
             }
 
@@ -236,22 +301,138 @@ const startLogic = async () => {
                 const targetArea = (await ClientCommands.getAreaInfo(kid, targetCache.x, targetCache.y, targetCache.x, targetCache.y)()).areaInfo[0]
                 if(!targetArea) return { result: "INVALID_TARGET" }
 
-                const attackInfo = getAttackInfo(kid, sourceCastleArea, targetArea, commander, 70, 1, pluginOptions.useCoin)
+                // FIX: Request configured waves (Frontend returns index 0-3, so add 1)
+                // If undefined, default to 4 waves (index 3)
+                const maxWaves = (pluginOptions.maxWaves !== undefined ? Number(pluginOptions.maxWaves) : 3) + 1;
+                
+                const attackInfo = getAttackInfo(kid, sourceCastleArea, targetArea, commander, 70, maxWaves, pluginOptions.useCoin)
                 if (pluginOptions.useFeather) attackInfo.PTT = 2;
 
-                const findUnit = (id) => sourceCastle.unitInventory.find(u => u.unitID == id);
-                const t651 = findUnit(651); const t776 = findUnit(776);
-                
-                availableTroops.sort((a, b) => Math.max(Number(b[0].meleeAttack||0), Number(b[0].rangeAttack||0)) - Math.max(Number(a[0].meleeAttack||0), Number(a[0].rangeAttack||0)));
+                // --- DYNAMIC ATTACK BUILDER ---
+                if (pluginOptions.useGamePreset) {
+                    const presetResult = applyPreset(attackInfo, pluginOptions.presetID, maxWaves);
+                    if (!presetResult.success) {
+                        console.warn(`[${name}] Preset Error: ${presetResult.error}`);
+                        return { result: presetResult.error };
+                    }
+                    console.log(`[${name}] Game Preset Applied (ID: ${pluginOptions.presetID}, Waves: ${maxWaves})`);
+                } else {
+                    // --- LEGACY / MANUAL BUILDER ---
+                    let attackPlan = [];
+                    try {
+                        attackPlan = JSON.parse(pluginOptions.customAttackPlan || "[]");
+                    } catch(e) { console.error("Invalid Attack Plan JSON"); }
 
-                if (!t651 || t651.ammount < 10 || !t776 || t776.ammount < 20) return { result: "MISSING_ITEMS" }
+                    // Default fallback plan if empty
+                    if (!attackPlan || attackPlan.length === 0) {
+                       attackPlan = [
+                           { left: { units: [], tools: [] }, mid: { units: [], tools: [] }, right: { units: [], tools: [] } }
+                       ];
+                    }
 
-                const wave = attackInfo.A[0];
-                wave.L.T[0] = [651, 10]; wave.L.T[1] = [776, 20]; assignUnit(wave.L.U[0], availableTroops, 54);
+                    // Helper: Find exact or replacement unit
+                    const getUnitForSlot = (targetWodID, targetCount, rolePreference) => {
+                        // 1. Try exact match
+                        let invItem = sourceCastle.unitInventory.find(u => u.unitID == targetWodID);
+                        if (invItem && invItem.ammount > 0) {
+                            return { id: targetWodID, count: Math.min(targetCount, invItem.ammount), original: true };
+                        }
 
-                const usedUnits = {};
-                const track = (slot) => { if (slot[0] != -1) usedUnits[slot[0]] = (usedUnits[slot[0]] || 0) + slot[1]; };
-                track(wave.L.U[0]);
+                        // 2. Smart Replacement
+                        if (pluginOptions.smartUnitReplacement) {
+                            let bestCandidate = null;
+                            let maxPower = -1;
+
+                            availableTroops.forEach(t => {
+                                const info = t[0];
+                                const amt = t[1];
+                                if (amt <= 0) return;
+                                
+                                // Check Role
+                                if (info.role !== rolePreference) return;
+
+                                const power = Math.max(Number(info.meleeAttack||0), Number(info.rangeAttack||0));
+                                if (power > maxPower) {
+                                    maxPower = power;
+                                    bestCandidate = { id: info.wodID, count: Math.min(targetCount, amt) };
+                                }
+                            });
+
+                            if (bestCandidate) return { ...bestCandidate, original: false };
+                        }
+
+                        return null;
+                    };
+
+                    // Helper: Get Tool (Strict check usually preferred for tools)
+                    const getToolForSlot = (targetWodID, targetCount) => {
+                        let invItem = sourceCastle.unitInventory.find(u => u.unitID == targetWodID);
+                        if (invItem && invItem.ammount > 0) {
+                            return { id: targetWodID, count: Math.min(targetCount, invItem.ammount) };
+                        }
+                        return null;
+                    };
+                    
+                    // Construct Waves
+                    const flankKeys = { left: 'L', mid: 'M', right: 'R' };
+
+                    for (let w = 0; w < 4; w++) {
+                        const planWave = attackPlan[w];
+                        if (!planWave) break; // No more waves in plan
+
+                        const protocolWave = attackInfo.A[w];
+                        if (!protocolWave) continue;
+
+                        for (const [uiSide, protocolSide] of Object.entries(flankKeys)) {
+                            const sideData = planWave[uiSide];
+                            if (!sideData) continue;
+
+                            // Fill Tools
+                            if (sideData.tools) {
+                                sideData.tools.forEach((t, idx) => {
+                                    if (idx >= 10) return; // Max slots
+                                    const foundTool = getToolForSlot(t.wodID, t.count);
+                                    if (foundTool) {
+                                        protocolWave[protocolSide].T[idx] = [foundTool.id, foundTool.count];
+                                        let invRef = sourceCastle.unitInventory.find(x => x.unitID == foundTool.id);
+                                        if(invRef) invRef.ammount -= foundTool.count;
+                                    }
+                                });
+                            }
+
+                            // Fill Units
+                            if (sideData.units && sideData.units.length > 0) {
+                                 const planUnit = sideData.units[0]; 
+                                 const unitInfoDef = units.find(u => u.wodID == planUnit.wodID);
+                                 const role = unitInfoDef ? unitInfoDef.role : "melee"; 
+
+                                 const foundUnit = getUnitForSlot(planUnit.wodID, planUnit.count, role);
+                                 
+                                 if (foundUnit) {
+                                     protocolWave[protocolSide].U[0] = [foundUnit.id, foundUnit.count];
+                                     let invRef = sourceCastle.unitInventory.find(x => x.unitID == foundUnit.id);
+                                     if(invRef) invRef.ammount -= foundUnit.count;
+                                     let avRef = availableTroops.find(x => x[0].wodID == foundUnit.id);
+                                     if(avRef) avRef[1] -= foundUnit.count;
+                                 }
+                            }
+                        }
+                    }
+                }
+
+                // Validation: Check if we actually added any soldiers?
+                // If the attack is empty, return MISSING_ITEMS
+                let totalSoldiersSent = 0;
+                attackInfo.A.forEach(wave => {
+                    ['L','M','R'].forEach(side => {
+                        if (wave[side].U[0] && wave[side].U[0][1] > 0) totalSoldiersSent += wave[side].U[0][1];
+                    })
+                });
+
+                if (totalSoldiersSent < 10) {
+                     console.warn(`[${name}] Attack plan resulted in too few troops (${totalSoldiersSent}). Check inventory or plan.`);
+                     return { result: "MISSING_ITEMS" };
+                }
 
                 await areaInfoLock(() => sendXT("cra", JSON.stringify(attackInfo)))
                 let [obj, r] = await waitForResult("cra", 10000, (o, res) => true)

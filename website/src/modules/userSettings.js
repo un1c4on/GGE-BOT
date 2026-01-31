@@ -2,13 +2,16 @@ import * as React from 'react'
 import { 
     Checkbox, TextField, Paper, FormControlLabel, 
     Select, MenuItem, FormControl, InputLabel, Box, Typography, 
-    CircularProgress, Divider, Fab, Zoom
+    CircularProgress, Divider, Fab, Zoom, Button, Backdrop
 } from '@mui/material'
 import SaveIcon from '@mui/icons-material/Save'
 
 import { ErrorType, ActionType } from "../types.js"
 import PluginsTable from './pluginsTable'
 import { getTranslation } from '../translations.js'
+
+import DoubleArrowIcon from '@mui/icons-material/DoubleArrow'
+import AttackDesigner from './AttackDesigner'
 
 export default function UserSettings(props) {
     const { language, activeTab } = props;
@@ -17,9 +20,11 @@ export default function UserSettings(props) {
     const [loading, setLoading] = React.useState(true);
     const [instances, setInstances] = React.useState([]);
     const [langData, setLangData] = React.useState({});
+    const [openDesigner, setOpenDesigner] = React.useState(false);
     
     // Form states
     const [name, setName] = React.useState(props.selectedUser.name ?? "");
+// ... (fetchData aynı kalacak)
     const [pass, setPass] = React.useState("");
     const [plugins, setPlugins] = React.useState(props.selectedUser.plugins || {});
     const [server, setServer] = React.useState(props.selectedUser.server || "");
@@ -126,8 +131,42 @@ export default function UserSettings(props) {
                                     }}
                                 />
                             </Box>
-                            <Divider sx={{ mb: 4, opacity: 0.1 }} />
-                            <Box sx={{ bgcolor: 'rgba(255,255,255,0.02)', p: 4, borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
+                                    <Divider sx={{ mb: 4, opacity: 0.1 }} />
+                                    
+                                    {/* SALDIRI TASARIM BUTONU (Sadece Berimond için şimdilik) */}
+                                    {plugin.key === 'berikingdom' && (
+                                        <Box sx={{ mb: 3 }}>
+                                            <Button 
+                                                variant="contained" 
+                                                color="warning" 
+                                                startIcon={<DoubleArrowIcon />}
+                                                onClick={() => setOpenDesigner(true)}
+                                                sx={{ mb: 2 }}
+                                            >
+                                                {t("Saldırı Tasarla")}
+                                            </Button>
+                                            
+                                            <Backdrop 
+                                                open={openDesigner} 
+                                                sx={{ zIndex: 9999 }}
+                                            >
+                                                <AttackDesigner 
+                                                    inventory={props.userStatus?.enrichedInventory}
+                                                    onClose={() => setOpenDesigner(false)}
+                                                    onSave={(plan) => {
+                                                        const np = { ...plugins };
+                                                        np[plugin.key] = { ...np[plugin.key], attackPlan: plan };
+                                                        setPlugins(np);
+                                                        setOpenDesigner(false);
+                                                    }}
+                                                    t={t}
+                                                />
+                                            </Backdrop>
+                                        </Box>
+                                    )}
+
+                                    {/* Plugin Specific Settings */}
+                                    <Box sx={{ bgcolor: 'rgba(255,255,255,0.02)', p: 4, borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
                                 <PluginsTable singlePlugin={plugin} plugins={[plugin]} userPlugins={plugins} onChange={e => setPlugins(e)} language={language} />
                             </Box>
                         </Box>

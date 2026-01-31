@@ -4,7 +4,7 @@ import { ThemeProvider, createTheme } from '@mui/material/styles'
 import { 
     Box, Drawer, AppBar, Toolbar, List, Typography, Divider, 
     ListItem, ListItemButton, ListItemIcon, ListItemText, CssBaseline,
-    Avatar, Chip, Collapse, IconButton, Menu, MenuItem
+    Avatar, Chip, Collapse, IconButton, Menu, MenuItem, Checkbox, Button
 } from '@mui/material'
 import DashboardIcon from '@mui/icons-material/Dashboard'
 import SettingsIcon from '@mui/icons-material/Settings'
@@ -22,7 +22,7 @@ import { ErrorType, ActionType, User } from "./types.js"
 import { getTranslation } from './translations.js'
 import ReconnectingWebSocket from "reconnecting-websocket"
 
-const drawerWidth = 280;
+const drawerWidth = 350;
 
 const darkTheme = createTheme({
   palette: {
@@ -55,6 +55,7 @@ function App() {
         setUsers(uList); setPlugins(obj[1]);
         if (uList.length > 0 && !selectedUser) setSelectedUser(uList[0]);
       } else if (action === ActionType.StatusUser) {
+        console.debug("Live Status Received:", obj);
         setUsersStatus(prev => ({ ...prev, [obj.id]: obj }));
       } else if (action === ActionType.GetUUID && err === ErrorType.Unauthenticated) {
         window.location.href = "signin.html";
@@ -68,6 +69,31 @@ function App() {
 
   const handleBotSelect = (user) => {
     setSelectedUser(user); setActiveView('settings'); setSettingsOpen(true); setSettingsTab('account');
+  };
+
+  const togglePluginFromSidebar = (e, pluginKey) => {
+      e.stopPropagation();
+      if (!selectedUser) return;
+      
+      const updatedUser = { ...selectedUser };
+      updatedUser.plugins = JSON.parse(JSON.stringify(updatedUser.plugins || {}));
+      
+      const currentState = updatedUser.plugins[pluginKey]?.state || false;
+      
+      if (!updatedUser.plugins[pluginKey]) updatedUser.plugins[pluginKey] = {};
+      updatedUser.plugins[pluginKey].state = !currentState;
+      
+      // Update Selected User State
+      setSelectedUser(updatedUser);
+      
+      // Update Users List State (for Dashboard reflection)
+      setUsers(prevUsers => prevUsers.map(u => u.id === updatedUser.id ? updatedUser : u));
+  };
+
+  const handleSidebarSave = () => {
+      if (!selectedUser) return;
+      ws.send(JSON.stringify([ErrorType.Success, ActionType.SetUser, selectedUser]));
+      // Optional: Show success feedback
   };
 
   return (
@@ -94,9 +120,9 @@ function App() {
           </Toolbar>
         </AppBar>
 
-        <Drawer variant="permanent" sx={{ width: drawerWidth, flexShrink: 0, [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: 'border-box', borderRight: '1px solid rgba(255,255,255,0.05)' } }}>
+        <Drawer variant="permanent" sx={{ width: drawerWidth, flexShrink: 0, [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: 'border-box', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column' } }}>
           <Toolbar />
-          <Box sx={{ overflow: 'auto', mt: 2 }}>
+          <Box sx={{ overflow: 'auto', mt: 2, flexGrow: 1 }}>
             <List sx={{ px: 1 }}>
               <ListItem disablePadding sx={{ mb: 1 }}>
                 <ListItemButton selected={activeView === 'dashboard'} onClick={() => { setActiveView('dashboard'); setSettingsOpen(false); }} sx={{ borderRadius: 2 }}>
@@ -127,8 +153,19 @@ function App() {
                       <Typography variant="caption" sx={{ px: 2, color: 'gray', fontWeight: 'bold' }}>{t("ACTIVE PLUGINS")}</Typography>
                       
                       {plugins.map((plugin) => (
-                        <ListItemButton key={plugin.key} selected={activeView === 'settings' && settingsTab === plugin.key} onClick={() => { setActiveView('settings'); setSettingsTab(plugin.key); }} sx={{ borderRadius: '10px 0 0 10px', borderLeft: selectedUser?.plugins[plugin.key]?.state ? '3px solid #4caf50' : '3px solid transparent' }}>
-                          <ListItemIcon><ExtensionIcon sx={{ fontSize: 18, color: selectedUser?.plugins[plugin.key]?.state ? '#4caf50' : 'inherit' }} /></ListItemIcon>
+                        <ListItemButton 
+                            key={plugin.key} 
+                            selected={activeView === 'settings' && settingsTab === plugin.key} 
+                            onClick={() => { setActiveView('settings'); setSettingsTab(plugin.key); }} 
+                            sx={{ borderRadius: '10px 0 0 10px', borderLeft: selectedUser?.plugins[plugin.key]?.state ? '3px solid #4caf50' : '3px solid transparent' }}
+                        >
+                          <Checkbox 
+                             size="small" 
+                             checked={selectedUser?.plugins[plugin.key]?.state || false} 
+                             onClick={(e) => togglePluginFromSidebar(e, plugin.key)}
+                             sx={{ p: 0.5, mr: 1, color: '#666', '&.Mui-checked': { color: '#4caf50' } }}
+                          />
+                          <ListItemIcon sx={{ minWidth: 30 }}><ExtensionIcon sx={{ fontSize: 18, color: selectedUser?.plugins[plugin.key]?.state ? '#4caf50' : 'inherit' }} /></ListItemIcon>
                           <ListItemText primary={t(plugin.name)} primaryTypographyProps={{ fontSize: '0.8rem' }} />
                         </ListItemButton>
                       ))}
@@ -137,27 +174,42 @@ function App() {
                 </>
               )}
                         </List>
+          </Box>
             
-                        <Box sx={{ mt: 'auto', px: 1, pb: 2 }}>
-                            <Divider sx={{ mb: 1, opacity: 0.1 }} />
-                            <ListItem disablePadding>
-                              <ListItemButton 
-                                onClick={() => window.location.href = "signin.html"} 
-                                sx={{ 
-                                    borderRadius: 2,
-                                    '&:hover': { bgcolor: 'rgba(211, 47, 47, 0.1)' }
-                                }}
-                              >
-                                <ListItemIcon><LogoutIcon sx={{ color: '#ff5252' }} /></ListItemIcon>
-                                <ListItemText 
-                                    primary={t("Logout")} 
-                                    primaryTypographyProps={{ sx: { color: '#ff5252', fontWeight: 'bold' } }} 
-                                />
-                              </ListItemButton>
-                            </ListItem>
-                        </Box>
-                      </Box>
-                    </Drawer>
+          {/* SIDEBAR FOOTER ACTION */}
+          {selectedUser && (
+              <Box sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.05)', bgcolor: 'rgba(0,0,0,0.2)' }}>
+                  <Button 
+                      fullWidth 
+                      variant="contained" 
+                      color="primary" 
+                      onClick={handleSidebarSave}
+                      sx={{ fontWeight: 'bold' }}
+                  >
+                      {t("Save Changes")}
+                  </Button>
+              </Box>
+          )}
+
+          <Box sx={{ px: 1, pb: 2 }}>
+            <Divider sx={{ mb: 1, opacity: 0.1 }} />
+            <ListItem disablePadding>
+              <ListItemButton 
+                onClick={() => window.location.href = "signin.html"} 
+                sx={{ 
+                    borderRadius: 2,
+                    '&:hover': { bgcolor: 'rgba(211, 47, 47, 0.1)' }
+                }}
+              >
+                <ListItemIcon><LogoutIcon sx={{ color: '#ff5252' }} /></ListItemIcon>
+                <ListItemText 
+                    primary={t("Logout")} 
+                    primaryTypographyProps={{ sx: { color: '#ff5252', fontWeight: 'bold' } }} 
+                />
+              </ListItemButton>
+            </ListItem>
+          </Box>
+        </Drawer>
             
 
         <Box component="main" sx={{ flexGrow: 1, p: 4, minHeight: '100vh', bgcolor: '#050c1a' }}>
@@ -165,7 +217,14 @@ function App() {
           {activeView === 'dashboard' ? (
             <GGEUserTable ws={ws} plugins={plugins} rows={users} usersStatus={usersStatus} language={language} onSelectUser={handleBotSelect} />
           ) : (
-            <UserSettings ws={ws} selectedUser={selectedUser} plugins={plugins} language={language} activeTab={settingsTab} />
+            <UserSettings 
+                ws={ws} 
+                selectedUser={selectedUser} 
+                userStatus={usersStatus[selectedUser?.id]} // Canlı statü (Envanter burada)
+                plugins={plugins} 
+                language={language} 
+                activeTab={settingsTab} 
+            />
           )}
         </Box>
       </Box>

@@ -35,10 +35,31 @@ const ggeConfigExample = `{
 const loggedInUsers = {}
 const botMap = new Map()
 
+// OYUN VERİSİ YÜKLEME
+let gameData = { units: {}, lang: {} };
+const loadGameData = async () => {
+  try {
+    const unitsRaw = await fs.readFile('./items/units.json', 'utf8');
+    const langRaw = await fs.readFile('./lang.json', 'utf8');
+    const units = JSON.parse(unitsRaw);
+    const lang = JSON.parse(langRaw);
+    
+    units.forEach(u => {
+      gameData.units[u.wodID] = u;
+    });
+    gameData.lang = lang;
+    console.info("Game data loaded successfully.");
+  } catch (e) {
+    console.error("Failed to load game data:", e);
+  }
+};
+loadGameData();
+
 class User {
   constructor(obj) {
     if (obj == undefined) return
     this.id = obj.id ? Number(obj.id) : null
+    this.UserId = obj.UserId // IDOR ve Sahiplik kontrolü için gerekli
     this.state = obj.is_active ? 1 : (obj.state ?? 0)
     this.name = obj.name || obj.game_username || ""
     this.pass = obj.pass || obj.game_password_encrypted || ""
@@ -210,11 +231,11 @@ async function start() {
   const sessionMiddleware = session({
     store: new pgSession({ 
       pool: new Pool({
-        user: 'un1c4on',
-        password: 'un1c4on',
-        host: 'localhost',
-        port: 5433,
-        database: 'ggebot_db'
+        user: process.env.DB_USER || 'un1c4on',
+        password: process.env.DB_PASS || 'un1c4on',
+        host: process.env.DB_HOST || 'localhost',
+        port: process.env.DB_PORT || 5433,
+        database: process.env.DB_NAME || 'ggebot_db'
       }), 
       tableName: 'session', 
       createTableIfMissing: true 
@@ -225,15 +246,122 @@ async function start() {
     cookie: { maxAge: 30 * 24 * 60 * 60 * 1000, httpOnly: true, secure: false }
   });
   app.use(sessionMiddleware)
-  app.use(express.static('website/build'))
+  
+  // Statik dosyaları tam yol ile sun
+  app.use(express.static(path.join(__dirname, 'website', 'build')))
 
-  app.get('/', (_, res) => res.redirect('/index.html'))
+  // API olmayan istekleri index.html'e yönlendir (SPA Desteği)
+  // Bu satır API rotalarından SONRA gelmeli ama app.listen'dan ÖNCE olmalı.
+  // Mevcut API rotaları yukarıda tanımlı olduğu için buraya ekliyoruz.
+  
   app.get('/lang.json', (_, res) => { res.setHeader('Access-Control-Allow-Origin', '*'); res.sendFile('lang.json', { root: '.' }) })
   app.get('/1.xml', (_, res) => { res.setHeader('Access-Control-Allow-Origin', '*'); res.sendFile('1.xml', { root: "." }) })
   
+  // --- YENİ API ENDPOINTLERİ ---
+
+  // 1. KAYIT OL (Sadece Web Kullanıcısı)
+  app.post('/api/register', bodyParser.json(), async (req, res) => {
+    const { username, email, password } = req.body;
+    if (!username || !email || !password) return res.status(400).json({ error: i18n.__('missingFields') });
+    
+    try {
+      const existingUser = await DBUser.findOne({ where: { email } });
+      if (existingUser) return res.status(409).json({ error: i18n.__('userAlreadyExists') });
+
+      const newUser = await DBUser.create({ 
+        username, 
+        email, 
+        password_hash: password // Prod ortamında hashlenmeli!
+      });
+      
+      req.session.userId = newUser.id;
+      req.session.save();
+      
+      res.json({ success: true, userId: newUser.id });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  // 2. GİRİŞ YAP
+  app.post('/api/login', bodyParser.json(), async (req, res) => {
+    const { email, password } = req.body;
+    try {
+      // Hem username hem email ile girişe izin ver
+      const user = await DBUser.findOne({ 
+        where: sequelize.or({ email: email }, { username: email }) 
+      });
+
+      if (user && user.password_hash === password) {
+        // --- ABONELİK KONTROLÜ ---
+        if (user.role !== 'admin') { // Admin her zaman girebilir
+            if (!user.subscription_end_date || new Date(user.subscription_end_date) < new Date()) {
+                return res.status(403).json({ error: i18n.__('subscriptionExpired') || 'Abonelik süreniz dolmuş veya başlamamış.' });
+            }
+        }
+        // -------------------------
+
+        req.session.userId = user.id;
+        req.session.save();
+        res.json({ success: true, userId: user.id });
+      } else {
+        res.status(401).json({ error: i18n.__('invalidCredentials') });
+      }
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  // 3. KALE EKLE (Oyun Hesabı Bağla)
+  app.post('/api/add-castle', bodyParser.json(), async (req, res) => {
+    if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
+    
+    const { server, game_username, game_password } = req.body;
+    if (!server || !game_username || !game_password) return res.status(400).json({ error: 'Missing fields' });
+
+    try {
+      // Kullanıcının zaten bu serverda bu isimle hesabı var mı?
+      const existing = await GameAccount.findOne({
+        where: {
+          game_server: String(server),
+          game_username: game_username
+        }
+      });
+
+      if (existing) {
+        // Eğer hesap başkasına aitse hata ver, kendisine aitse güncelle
+        if (existing.UserId !== req.session.userId) {
+          return res.status(409).json({ error: 'Game account already linked to another user.' });
+        }
+      }
+
+      await addUser(req.session.userId, {
+        server: server,
+        name: game_username,
+        pass: game_password
+      });
+      
+      // WebSocket ile frontend'i güncelle
+      const wsClient = loggedInUsers[req.session.userId]?.[0]?.ws;
+      if (wsClient) {
+        wsClient.send(JSON.stringify([ErrorType.Success, ActionType.GetUsers, [await getUser(req.session.userId), plugins]]));
+      }
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Failed to add castle' });
+    }
+  });
+
+  // ESKİ API (Geriye uyumluluk veya signin.html tarafından çağrılanlar için)
   app.post('/api', bodyParser.json(), async (req, res) => {
     let json = req.body
     res.setHeader('Content-Type', 'application/json')
+    
+    // Login (id: 0)
     if (json.id == 0) {
       const row = await DBUser.findOne({ where: { username: json.email_name } })
       if (row && json.password === row.password_hash) {
@@ -242,11 +370,12 @@ async function start() {
       }
       return res.send(JSON.stringify({ id: 0, r: 1, error: 'Invalid login details.' }))
     }
+    // Register (id: 1) -> Artık sadece web kullanıcısı oluşturmalı ama eski mantığı bozmuyoruz şimdilik
     else if (json.id == 1) {
       if (json.token != ggeConfig.signupToken) return res.send(JSON.stringify({ id: 0, r: 1, error: 'Invalid Sign up details.' }))
       try {
         const newUser = await DBUser.create({ username: json.username, email: json.username + "@gge.com", password_hash: json.password })
-        // Otomatik kale oluştur (Kullanıcı bilgileriyle aynı)
+        // Eski kayıt sistemi otomatik kale ekliyordu, bunu kaldırmıyoruz ki eski formlar çalışsın
         await GameAccount.create({ UserId: newUser.id, game_username: json.username, game_password_encrypted: json.password, game_server: '10' })
         res.send(JSON.stringify({ r: 0, uuid: newUser.id }))
       } catch (err) { res.send(JSON.stringify({ r: 1 })); console.error(err) }
@@ -291,11 +420,21 @@ async function start() {
           worker.messageBufferCount = (worker.messageBufferCount + 1) % 25
           loggedInUsers[userId]?.forEach(o => o.viewedUser == user.id ? o.ws.send(JSON.stringify([ErrorType.Success, ActionType.GetLogs, [worker.messageBuffer, worker.messageBufferCount]])) : undefined)
           break
-        case ActionType.StatusUser:
-          obj[1].id = user.id
-          loggedInUsers[userId]?.forEach(o => o.ws.send(JSON.stringify([ErrorType.Success, ActionType.StatusUser, obj[1]])))
-          break
-        case ActionType.RemoveUser:
+                                                case ActionType.StatusUser:
+                                                  // Bot verisi bazen [Action, Data] bazen direkt Data gelebilir
+                                                  const statusRaw = Array.isArray(obj) ? obj[1] : obj;
+                                                  
+                                                  if (statusRaw && statusRaw.inventory) {
+                                                      // Enriched inventory calculation removed
+                                                      // ID'yi her zaman botun veritabanı ID'si ile sabitle
+                                                      statusRaw.id = user.id;
+                                                      
+                                                      loggedInUsers[userId]?.forEach(o =>
+                                                          o.ws.send(JSON.stringify([ErrorType.Success, ActionType.StatusUser, statusRaw])))
+                                                  }
+                                                  break
+                                        
+                                                        case ActionType.RemoveUser:
           worker.off('exit', onTerminate); await removeUser(userId, user)
           break
         case ActionType.SetUser:
@@ -317,7 +456,36 @@ async function start() {
   }
 
   const allUsers = await getUser()
-  for (const u of allUsers) { if (u.state != 0) createBot(u.UserId, u) }
+  for (const u of allUsers) { 
+    // --- ABONELİK KONTROLÜ (BOT BAŞLATMA) ---
+    // User nesnesine DBUser dahil edildiği için u.User üzerinden erişebiliriz (GameAccount -> User ilişkisi)
+    // Ancak getUser fonksiyonu GameAccount döndürüyor ve include edilen User verisi 'User' fieldında olabilir.
+    // getUser fonksiyonunu kontrol ettik, DBUser'ı include ediyor ama User sınıfına çevirirken bunu kaybetmemeli.
+    // User sınıfı şu an sadece basit alanları alıyor. Bu kontrolü veritabanından taze veriyle yapmak daha güvenli.
+    
+    try {
+        const dbUser = await DBUser.findByPk(u.UserId);
+        if (dbUser && dbUser.role !== 'admin') {
+             if (!dbUser.subscription_end_date || new Date(dbUser.subscription_end_date) < new Date()) {
+                 console.log(`[Skipped] User ${dbUser.username} subscription expired.`);
+                 continue;
+             }
+        }
+    } catch (e) { console.error("Sub check error:", e); }
+    // ----------------------------------------
+
+    if (u.state != 0) createBot(u.UserId, u) 
+  }
+
+  // SPA Fallback: API olmayan tüm istekleri index.html'e yönlendir
+  app.get('*', (req, res) => {
+    // API isteklerini engelleme
+    if (req.path.startsWith('/api')) return res.status(404).json({ error: 'Not Found' });
+    // Uzantılı dosyalar (resim, css vb.) bulunamadıysa 404 dön, index.html değil
+    if (req.path.includes('.') && !req.path.endsWith('.html')) return res.status(404).send('Not Found'); 
+    
+    res.sendFile(path.join(__dirname, 'website', 'build', 'index.html'));
+  });
 
   const wss = new WebSocketServer({ noServer: true })
   const options = {}
@@ -326,7 +494,7 @@ async function start() {
     options.cert = await fs.readFile(ggeConfig.cert, 'utf8')
   }
 
-  const server = (certFound ? https : http).createServer(options, app).listen(ggeConfig.webPort)
+  const server = (certFound ? https : http).createServer(options, app).listen(process.env.WEB_PORT || ggeConfig.webPort)
   server.on('upgrade', (req, socket, head) => {
     sessionMiddleware(req, {}, () => {
       wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req))
@@ -356,20 +524,41 @@ async function start() {
           await refreshUsers(); break
         case ActionType.SetUser:
           const activePluginCount = Object.keys(obj.plugins || {}).length;
-          console.debug(`[${obj.name}] Received SetUser. Active plugins: ${activePluginCount}`);
+          console.debug(`[${obj.name}] Received SetUser. Plugin Count: ${activePluginCount}, State: ${obj.state}`);
+          
           let oldU = await getSpecificUser(userId, new User(obj))
           let newU = await changeUser(userId, new User(obj))
-          if (!newU) return
-          if (newU.state == 0) { try { removeBot(newU.id) } catch (e) {} }
+          
+          if (!newU) {
+             console.error(`[${obj.name}] User update failed.`);
+             return;
+          }
+          
+          console.debug(`[${newU.name}] Update success. New State: ${newU.state}`);
+
+          if (newU.state == 0) { 
+            try { 
+                console.log(`[${newU.name}] Stopping bot...`);
+                removeBot(newU.id) 
+            } catch (e) { console.error(e); } 
+          }
           else {
             let w = botMap.get(newU.id)
-            if (!w) await createBot(userId, newU)
+            if (!w) {
+                console.log(`[${newU.name}] Starting new bot instance...`);
+                await createBot(userId, newU)
+            }
             else {
+              console.log(`[${newU.name}] Bot already running. Checking for restart...`);
               let restarted = false
               for (const [k, v] of Object.entries(oldU.plugins)) {
-                if (newU.plugins[k].state != v.state) { restarted = true; removeBot(newU.id); await createBot(userId, newU, w.messageBuffer, w.messageBufferCount); break }
+                if (newU.plugins[k].state != v.state) { 
+                    console.log(`[${newU.name}] Plugin ${k} state changed. Restarting bot...`);
+                    restarted = true; removeBot(newU.id); await createBot(userId, newU, w.messageBuffer, w.messageBufferCount); break 
+                }
               }
               if (!restarted) {
+                console.log(`[${newU.name}] No plugin state change requiring restart. Updating options...`);
                 let d = structuredClone(newU)
                 plugins.forEach(p => p.force ? (d.plugins[p.key] ??= {}).state = true : void 0)
                 plugins.forEach(p => d.plugins[p.key]?.state ? d.plugins[p.key].filename = p.filename : void 0)

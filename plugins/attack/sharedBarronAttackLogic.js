@@ -12,6 +12,7 @@ const { Types, getResourceCastleList, ClientCommands, areaInfoLock, AreaType, sp
 const { waitToAttack, getAttackInfo, assignUnit, getAmountSoldiersFlank, getAmountSoldiersFront, getMaxUnitsInReinforcementWave, boxMullerRandom, sleep } = require("./attack.js")
 const { movementEvents, waitForCommanderAvailable, freeCommander, useCommander } = require("../commander")
 const { sendXT, waitForResult, xtHandler, botConfig, playerInfo } = require("../../ggebot")
+const { applyPreset } = require("../../plugins/attack/presets")
 const getAreaCached = require('../../getmap.js')
 const err = require("../../err.json")
 
@@ -86,6 +87,11 @@ async function barronHit(name, type, kid, options) {
     Object.assign(pluginOptions, options ?? {})
     Object.assign(pluginOptions, botConfig.plugins["attack"] ?? {})
     
+    // Defaults for preset options
+    pluginOptions.useGamePreset ??= false;
+    pluginOptions.presetID ??= "0";
+    pluginOptions.maxWaves ??= 3; // Default index 3 (4 waves)
+
     let towerTime = new WeakMap()
     let sortedAreaInfo = []
     const movements = []
@@ -203,115 +209,128 @@ async function barronHit(name, type, kid, options) {
 
                 const level = getLevel(AI.extraData[1], kid)
 
-                const attackInfo = getAttackInfo(kid, sourceCastleArea, AI, commander, level, undefined, pluginOptions.useCoin)
+                const maxWaves = (pluginOptions.maxWaves !== undefined ? Number(pluginOptions.maxWaves) : 3) + 1;
+                const attackInfo = getAttackInfo(kid, sourceCastleArea, AI, commander, level, maxWaves, pluginOptions.useCoin)
 
-                const attackerMeleeTroops = []
-                const attackerRangeTroops = []
+                // --- PRESET LOGIC ---
+                if (pluginOptions.useGamePreset) {
+                    const presetResult = applyPreset(attackInfo, pluginOptions.presetID, maxWaves);
+                    if (!presetResult.success) {
+                        console.warn(`[${name}] Preset Error: ${presetResult.error}`);
+                        // Fallback or throw?
+                        // For consistency with other plugins, let's throw or return dummy success to skip
+                        throw "PRESET_ERROR: " + presetResult.error;
+                    }
+                    console.log(`[${name}] Game Preset Applied (ID: ${pluginOptions.presetID}, Waves: ${maxWaves})`);
+                } else {
+                    const attackerMeleeTroops = []
+                    const attackerRangeTroops = []
 
-                for (let i = 0; i < sourceCastle.unitInventory.length; i++) {
-                    const unit = sourceCastle.unitInventory[i]
-                    const unitInfo = units.find(obj => unit.unitID == obj.wodID)
-                    if (unitInfo == undefined)
-                        continue
-
-                    if (unitInfo.fightType == 0) {
-                        if(troopBlackList.includes(unitInfo.wodID))
+                    for (let i = 0; i < sourceCastle.unitInventory.length; i++) {
+                        const unit = sourceCastle.unitInventory[i]
+                        const unitInfo = units.find(obj => unit.unitID == obj.wodID)
+                        if (unitInfo == undefined)
                             continue
-                        if (unitInfo.role == "melee")
-                            attackerMeleeTroops.push([unitInfo, unit.ammount])
-                        else if (unitInfo.role == "ranged")
-                            attackerRangeTroops.push([unitInfo, unit.ammount])
+
+                        if (unitInfo.fightType == 0) {
+                            if(troopBlackList.includes(unitInfo.wodID))
+                                continue
+                            if (unitInfo.role == "melee")
+                                attackerMeleeTroops.push([unitInfo, unit.ammount])
+                            else if (unitInfo.role == "ranged")
+                                attackerRangeTroops.push([unitInfo, unit.ammount])
+                        }
                     }
-                }
 
-                let allTroopCount = 0
+                    let allTroopCount = 0
 
-                attackerRangeTroops.forEach(e => allTroopCount += e[1])
-                attackerMeleeTroops.forEach(e => allTroopCount += e[1])
+                    attackerRangeTroops.forEach(e => allTroopCount += e[1])
+                    attackerMeleeTroops.forEach(e => allTroopCount += e[1])
 
-                if (allTroopCount < minTroopCount)
-                    throw "NO_MORE_TROOPS"
-                
-                // Simulating: Selecting Units and filling waves (Cognitive processing ~100ms per wave/calculation)
-                await sleep(boxMullerRandom(200, 400, 1))
-
-                // Get user options, defaulting to full attack if not set
-                const maxWaves = parseInt(pluginOptions.attackWaves) || 4;
-                const doLeft = pluginOptions.attackLeft !== false;
-                const doRight = pluginOptions.attackRight !== false;
-                const doMiddle = pluginOptions.attackMiddle !== false;
-                const doCourtyard = pluginOptions.attackCourtyard !== false;
-
-                let totalAssigned = 0;
-                const MAX_TOTAL_TROOPS = 70;
-
-                attackInfo.A.forEach((wave, waveIndex) => {
-                    // Stop filling waves if we reached the user's limit or total troop limit
-                    if (waveIndex >= maxWaves || totalAssigned >= MAX_TOTAL_TROOPS) return;
-
-                    const commanderStats = getCommanderStats(commander)
-                    // Subtract safety buffer to prevent ATTACK_TOO_MANY_UNITS
-                    // Use smaller buffer for low levels
-                    let rawFlank = Math.floor(getAmountSoldiersFlank(level) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100)
-                    let rawFront = Math.floor(getAmountSoldiersFront(level) * 1 + (commanderStats.relicAttackUnitAmountFront ?? 0) / 100)
+                    if (allTroopCount < minTroopCount)
+                        throw "NO_MORE_TROOPS"
                     
-                    const maxTroopFlank = Math.max(0, rawFlank - (rawFlank > 15 ? 5 : 1))
-                    const maxTroopFront = Math.max(0, rawFront - (rawFront > 15 ? 5 : 1))
-                    
-                    if (doLeft) {
-                        let currentMax = Math.min(maxTroopFlank, MAX_TOTAL_TROOPS - totalAssigned);
-                        wave.L.U.forEach((unitSlot, i) => {
-                            if (currentMax <= 0) return;
-                            let assigned = assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
-                                attackerRangeTroops : attackerMeleeTroops, currentMax);
-                            currentMax -= assigned;
-                            totalAssigned += assigned;
-                        });
-                    }
+                    // Simulating: Selecting Units and filling waves (Cognitive processing ~100ms per wave/calculation)
+                    await sleep(boxMullerRandom(200, 400, 1))
 
-                    if (doRight) {
-                        let currentMax = Math.min(maxTroopFlank, MAX_TOTAL_TROOPS - totalAssigned);
-                        wave.R.U.forEach((unitSlot, i) => {
-                            if (currentMax <= 0) return;
-                            let assigned = assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
-                                attackerRangeTroops : attackerMeleeTroops, currentMax);
-                            currentMax -= assigned;
-                            totalAssigned += assigned;
-                        });
-                    }
+                    // Get user options, defaulting to full attack if not set
+                    const manualMaxWaves = parseInt(pluginOptions.attackWaves) || 4;
+                    const doLeft = pluginOptions.attackLeft !== false;
+                    const doRight = pluginOptions.attackRight !== false;
+                    const doMiddle = pluginOptions.attackMiddle !== false;
+                    const doCourtyard = pluginOptions.attackCourtyard !== false;
 
-                    if (doMiddle) {
-                        let currentMax = Math.min(maxTroopFront, MAX_TOTAL_TROOPS - totalAssigned);
-                        wave.M.U.forEach((unitSlot, i) => {
-                            if (currentMax <= 0) return;
-                            let assigned = assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
-                                attackerRangeTroops : attackerMeleeTroops, currentMax);
-                            currentMax -= assigned;
-                            totalAssigned += assigned;
-                        });
-                    }
-                })
+                    let totalAssigned = 0;
+                    const MAX_TOTAL_TROOPS = 70;
 
+                    attackInfo.A.forEach((wave, waveIndex) => {
+                        // Stop filling waves if we reached the user's limit or total troop limit
+                        if (waveIndex >= manualMaxWaves || totalAssigned >= MAX_TOTAL_TROOPS) return;
 
-                if (doCourtyard && totalAssigned < MAX_TOTAL_TROOPS) {
-                    let maxTroops = Math.min(getMaxUnitsInReinforcementWave(playerInfo.level, level), MAX_TOTAL_TROOPS - totalAssigned);
-                    attackInfo.RW.forEach((unitSlot, i) => {
-                        if (maxTroops <= 0) return;
-                        let attacker = i & 1 ?
-                            (attackerMeleeTroops.length > 0 ? attackerMeleeTroops : attackerRangeTroops) :
-                            (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops)
+                        const commanderStats = getCommanderStats(commander)
+                        // Subtract safety buffer to prevent ATTACK_TOO_MANY_UNITS
+                        // Use smaller buffer for low levels
+                        let rawFlank = Math.floor(getAmountSoldiersFlank(level) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100)
+                        let rawFront = Math.floor(getAmountSoldiersFront(level) * 1 + (commanderStats.relicAttackUnitAmountFront ?? 0) / 100)
+                        
+                        const maxTroopFlank = Math.max(0, rawFlank - (rawFlank > 15 ? 5 : 1))
+                        const maxTroopFront = Math.max(0, rawFront - (rawFront > 15 ? 5 : 1))
+                        
+                        if (doLeft) {
+                            let currentMax = Math.min(maxTroopFlank, MAX_TOTAL_TROOPS - totalAssigned);
+                            wave.L.U.forEach((unitSlot, i) => {
+                                if (currentMax <= 0) return;
+                                let assigned = assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
+                                    attackerRangeTroops : attackerMeleeTroops, currentMax);
+                                currentMax -= assigned;
+                                totalAssigned += assigned;
+                            });
+                        }
 
-                        let assigned = assignUnit(unitSlot, attacker,
-                            Math.floor(maxTroops / 2));
-                        maxTroops -= assigned;
-                        totalAssigned += assigned;
+                        if (doRight) {
+                            let currentMax = Math.min(maxTroopFlank, MAX_TOTAL_TROOPS - totalAssigned);
+                            wave.R.U.forEach((unitSlot, i) => {
+                                if (currentMax <= 0) return;
+                                let assigned = assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
+                                    attackerRangeTroops : attackerMeleeTroops, currentMax);
+                                currentMax -= assigned;
+                                totalAssigned += assigned;
+                            });
+                        }
+
+                        if (doMiddle) {
+                            let currentMax = Math.min(maxTroopFront, MAX_TOTAL_TROOPS - totalAssigned);
+                            wave.M.U.forEach((unitSlot, i) => {
+                                if (currentMax <= 0) return;
+                                let assigned = assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
+                                    attackerRangeTroops : attackerMeleeTroops, currentMax);
+                                currentMax -= assigned;
+                                totalAssigned += assigned;
+                            });
+                        }
                     })
-                }
 
-                if (totalAssigned <= 0) {
-                     console.warn(`[${name}] Skipped target C${attackInfo.AAM.UM.L.VIS + 1} (Level ${level}) - No troops assigned (Capacity too low?)`)
-                     return { result: 0, executionDuration: 0 } // Return dummy success to continue loop
-                }
+
+                    if (doCourtyard && totalAssigned < MAX_TOTAL_TROOPS) {
+                        let maxTroops = Math.min(getMaxUnitsInReinforcementWave(playerInfo.level, level), MAX_TOTAL_TROOPS - totalAssigned);
+                        attackInfo.RW.forEach((unitSlot, i) => {
+                            if (maxTroops <= 0) return;
+                            let attacker = i & 1 ?
+                                (attackerMeleeTroops.length > 0 ? attackerMeleeTroops : attackerRangeTroops) :
+                                (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops)
+
+                            let assigned = assignUnit(unitSlot, attacker,
+                                Math.floor(maxTroops / 2));
+                            maxTroops -= assigned;
+                            totalAssigned += assigned;
+                        })
+                    }
+
+                    if (totalAssigned <= 0) {
+                         console.warn(`[${name}] Skipped target C${attackInfo.AAM.UM.L.VIS + 1} (Level ${level}) - No troops assigned (Capacity too low?)`)
+                         return { result: 0, executionDuration: 0 } // Return dummy success to continue loop
+                    }
+                } // End Else
 
                 // Final hesitation before clicking "Attack" (Human verification/hesitation ~150ms-400ms)
                 await sleep(boxMullerRandom(150, 400, 1))

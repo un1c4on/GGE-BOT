@@ -2,7 +2,8 @@ const { isMainThread } = require('node:worker_threads')
 
 const name = "Attack Fortress (Everwinter Glacier)"
 
-if (isMainThread)
+if (isMainThread) {
+    const { getPresetOptions } = require('./presets')
     return module.exports = {
         name: name,
         description: "Hits fortresses",
@@ -11,9 +12,11 @@ if (isMainThread)
                 type: "Text",
                 label: "Com White List",
                 key: "commanderWhiteList"
-            }
+            },
+            ...getPresetOptions()
         ]
     }
+}
 
 const { AreaType, KingdomID } = require('../../protocols')
 const { botConfig, events } = require('../../ggebot.js')

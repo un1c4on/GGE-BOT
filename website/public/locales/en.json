@@ -31,5 +31,6 @@
 	"Barons": "Barons",
 	"Select language": "Select Language",
 	"Successfully saved": "Changes saved successfully!",
-	"started": "started"
+	"started": "started",
+	"gameAccountSessionAlreadyInUse": "gameAccountSessionAlreadyInUse"
 }

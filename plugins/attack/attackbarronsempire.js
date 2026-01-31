@@ -1,7 +1,8 @@
 const { isMainThread } = require('node:worker_threads')
 
 const name = "Attack Barrons (Great Empire)"
-if (isMainThread)
+if (isMainThread) {
+    const { getPresetOptions } = require('./presets')
     return module.exports = {
         name: name,
         description: "Hits Barrons",
@@ -60,9 +61,11 @@ if (isMainThread)
                 label: "Max Waves",
                 key: "attackWaves",
                 default: ""
-            }
+            },
+            ...getPresetOptions()
         ]
     }
+}
 const { botConfig, events } = require("../../ggebot")
 const { KingdomID, AreaType } = require('../../protocols.js')
 const commonAttack = require('./sharedBarronAttackLogic.js')

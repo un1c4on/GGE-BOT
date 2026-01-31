@@ -1,8 +1,10 @@
 const { isMainThread } = require('node:worker_threads')
+const { getPresetOptions } = require('./presets')
 
 const name = "Attack Khan"
 
-if (isMainThread)
+if (isMainThread) {
+    const presetOptions = getPresetOptions();
     return module.exports = {
         name: name,
         description: "Hits khan camps (NOT RESPONSIBLE)",
@@ -64,10 +66,12 @@ if (isMainThread)
                 type: "Text",
                 label: "Nomad score shutoff",
                 key: "nomadsScoreShutoff"
-            }
+            },
+            ...presetOptions
         ]
 
     }
+}
 
 const err = require("../../err.json")
 const { Types, getResourceCastleList, ClientCommands, areaInfoLock, AreaType, spendSkip, KingdomID } = require('../../protocols')
@@ -75,10 +79,15 @@ const { waitToAttack, getAttackInfo, assignUnit, getTotalAmountToolsFlank, getTo
 const { movementEvents, waitForCommanderAvailable, freeCommander, useCommander } = require("../commander")
 const { sendXT, waitForResult, xtHandler, events, playerInfo, botConfig } = require("../../ggebot")
 const { getCommanderStats } = require("../../getEquipment")
+const { applyPreset } = require("../../plugins/attack/presets")
 const eventsDifficulties = require("../../items/eventAutoScalingDifficulties.json")
 const pluginOptions = Object.assign(structuredClone(
     botConfig.plugins[require('path').basename(__filename).slice(0, -3)] ?? {}),
     botConfig.plugins["attack"] ?? {})
+
+pluginOptions.useGamePreset ??= false;
+pluginOptions.presetID ??= "0";
+pluginOptions.maxWaves ??= 3; // Default to 4 waves (index 3)
 
 const eventAutoScalingCamps = require("../../items/eventAutoScalingCamps.json")
 const units = require("../../items/units.json")
@@ -223,196 +232,207 @@ events.on("eventStart", async eventInfo => {
                 await skipTarget(AI)
 
                 const level = Number(eventAutoScalingCamps.find(obj => AI[9] == obj.eventAutoScalingCampID).camplevel)
-                const attackInfo = getAttackInfo(kid, sourceCastleArea, Types.GAAAreaInfo(AI), commander, level, undefined, pluginOptions.useCoin)
+                const maxWaves = (pluginOptions.maxWaves !== undefined ? Number(pluginOptions.maxWaves) : 3) + 1;
+                const attackInfo = getAttackInfo(kid, sourceCastleArea, Types.GAAAreaInfo(AI), commander, level, maxWaves, pluginOptions.useCoin)
 
-                const attackerMeleeTroops = []
-                const attackerRangeTroops = []
-                const attackerBannerKhanTools = []
-                const attackerNomadTools = []
-                const attackerWallNomadTools = []
-                const attackerGateNomadTools = []
-                const attackerShieldNomadTools = []
-                const attackerWallTools = []
-                const attackerShieldTools = []
-
-                for (let i = 0; i < sourceCastle.unitInventory.length; i++) {
-                    const unit = sourceCastle.unitInventory[i]
-                    const unitInfo = units.find(obj => unit.unitID == obj.wodID)
-                    if (unitInfo == undefined)
-                        continue
-
-                    if (unitInfo.wodID == 277)
-                        continue
-
-                    if (unitInfo.ragePointBonus != undefined)
-                        attackerBannerKhanTools.push([unitInfo, unit.ammount])
-                    else if (unitInfo.khanTabletBooster != undefined) {
-                        if (unitInfo.gateBonus)
-                            attackerGateNomadTools.push([unitInfo, unit.ammount])
-                        else if (unitInfo.wallBonus)
-                            attackerWallNomadTools.push([unitInfo, unit.ammount])
-                        else if (unitInfo.defRangeBonus)
-                            attackerShieldNomadTools.push([unitInfo, unit.ammount])
-                        else
-                            attackerNomadTools.push([unitInfo, unit.ammount])
+                // --- PRESET LOGIC ---
+                if (pluginOptions.useGamePreset) {
+                    const presetResult = applyPreset(attackInfo, pluginOptions.presetID, maxWaves);
+                    if (!presetResult.success) {
+                        console.warn(`[${name}] Preset Error: ${presetResult.error}`);
+                        throw "PRESET_ERROR: " + presetResult.error;
                     }
-                    else if (
-                        unitInfo.toolCategory &&
-                        unitInfo.usageEventID == undefined &&
-                        unitInfo.allowedToAttack == undefined &&
-                        unitInfo.typ == 'Attack' &&
-                        unitInfo.amountPerWave == undefined
-                    ) {
-                        if (unitInfo.wallBonus)
-                            attackerWallTools.push([unitInfo, unit.ammount])
-                        else if (unitInfo.defRangeBonus)
-                            attackerShieldTools.push([unitInfo, unit.ammount])
+                    console.log(`[${name}] Game Preset Applied (ID: ${pluginOptions.presetID}, Waves: ${maxWaves})`);
+                } else {
+                    const attackerMeleeTroops = []
+                    const attackerRangeTroops = []
+                    const attackerBannerKhanTools = []
+                    const attackerNomadTools = []
+                    const attackerWallNomadTools = []
+                    const attackerGateNomadTools = []
+                    const attackerShieldNomadTools = []
+                    const attackerWallTools = []
+                    const attackerShieldTools = []
+
+                    for (let i = 0; i < sourceCastle.unitInventory.length; i++) {
+                        const unit = sourceCastle.unitInventory[i]
+                        const unitInfo = units.find(obj => unit.unitID == obj.wodID)
+                        if (unitInfo == undefined)
+                            continue
+
+                        if (unitInfo.wodID == 277)
+                            continue
+
+                        if (unitInfo.ragePointBonus != undefined)
+                            attackerBannerKhanTools.push([unitInfo, unit.ammount])
+                        else if (unitInfo.khanTabletBooster != undefined) {
+                            if (unitInfo.gateBonus)
+                                attackerGateNomadTools.push([unitInfo, unit.ammount])
+                            else if (unitInfo.wallBonus)
+                                attackerWallNomadTools.push([unitInfo, unit.ammount])
+                            else if (unitInfo.defRangeBonus)
+                                attackerShieldNomadTools.push([unitInfo, unit.ammount])
+                            else
+                                attackerNomadTools.push([unitInfo, unit.ammount])
+                        }
+                        else if (
+                            unitInfo.toolCategory &&
+                            unitInfo.usageEventID == undefined &&
+                            unitInfo.allowedToAttack == undefined &&
+                            unitInfo.typ == 'Attack' &&
+                            unitInfo.amountPerWave == undefined
+                        ) {
+                            if (unitInfo.wallBonus)
+                                attackerWallTools.push([unitInfo, unit.ammount])
+                            else if (unitInfo.defRangeBonus)
+                                attackerShieldTools.push([unitInfo, unit.ammount])
+                        }
+                        else if (unitInfo.fightType == 0) {
+                            if (unitInfo.role == "melee")
+                                attackerMeleeTroops.push([unitInfo, unit.ammount])
+                            else if (unitInfo.role == "ranged")
+                                attackerRangeTroops.push([unitInfo, unit.ammount])
+                        }
                     }
-                    else if (unitInfo.fightType == 0) {
-                        if (unitInfo.role == "melee")
-                            attackerMeleeTroops.push([unitInfo, unit.ammount])
-                        else if (unitInfo.role == "ranged")
-                            attackerRangeTroops.push([unitInfo, unit.ammount])
+
+                    let allTroopCount = 0
+
+                    attackerRangeTroops.forEach(e => allTroopCount += e[1])
+                    attackerMeleeTroops.forEach(e => allTroopCount += e[1])
+
+                    if (allTroopCount < minTroopCount)
+                        throw "NO_MORE_TROOPS"
+
+                    attackerBannerKhanTools.sort((a, b) =>
+                        Number(b[0].ragePointBonus + (b[0].khanTabletBooster ?? 0)) -
+                        Number(a[0].ragePointBonus + (a[0].khanTabletBooster ?? 0)))
+
+                    attackerNomadTools.sort((a, b) =>
+                        Number(b[0].khanTabletBooster) - Number(a[0].khanTabletBooster))
+                    attackerGateNomadTools.sort((a, b) =>
+                        Number(b[0].khanTabletBooster) - Number(a[0].khanTabletBooster))
+                    attackerWallNomadTools.sort((a, b) =>
+                        Number(b[0].khanTabletBooster) - Number(a[0].khanTabletBooster))
+                    attackerShieldNomadTools.sort((a, b) =>
+                        Number(b[0].khanTabletBooster) - Number(a[0].khanTabletBooster))
+
+                    if (pluginOptions.lowValueChests) {
+                        attackerBannerKhanTools.reverse()
+                        attackerNomadTools.reverse()
+                        attackerGateNomadTools.reverse()
+                        attackerWallNomadTools.reverse()
+                        attackerShieldNomadTools.reverse()
                     }
-                }
 
-                let allTroopCount = 0
+                    attackerWallTools.sort((a, b) =>
+                        Number(a[0].wallBonus) - Number(b[0].wallBonus))
 
-                attackerRangeTroops.forEach(e => allTroopCount += e[1])
-                attackerMeleeTroops.forEach(e => allTroopCount += e[1])
+                    attackerShieldTools.sort((a, b) =>
+                        Number(a[0].defRangeBonus) - Number(b[0].defRangeBonus))
 
-                if (allTroopCount < minTroopCount)
-                    throw "NO_MORE_TROOPS"
+                    attackerWallNomadTools.push(...attackerWallTools)
+                    attackerShieldNomadTools.push(...attackerShieldTools)
 
-                attackerBannerKhanTools.sort((a, b) =>
-                    Number(b[0].ragePointBonus + (b[0].khanTabletBooster ?? 0)) -
-                    Number(a[0].ragePointBonus + (a[0].khanTabletBooster ?? 0)))
+                    attackInfo.A.forEach((wave, index) => {
+                        const maxToolsFlank = getTotalAmountToolsFlank(level, 0)
+                        const maxToolsFront = getTotalAmountToolsFront(level)
 
-                attackerNomadTools.sort((a, b) =>
-                    Number(b[0].khanTabletBooster) - Number(a[0].khanTabletBooster))
-                attackerGateNomadTools.sort((a, b) =>
-                    Number(b[0].khanTabletBooster) - Number(a[0].khanTabletBooster))
-                attackerWallNomadTools.sort((a, b) =>
-                    Number(b[0].khanTabletBooster) - Number(a[0].khanTabletBooster))
-                attackerShieldNomadTools.sort((a, b) =>
-                    Number(b[0].khanTabletBooster) - Number(a[0].khanTabletBooster))
+                        const desiredToolCount = attackerNomadTools.length == 0 ? 20 : 10
+                        const commanderStats = getCommanderStats(commander)
+                        const maxTroopFront = getAmountSoldiersFront(level) * 1 + (commanderStats.relicAttackUnitAmountFront ?? 0) / 100
+                        const maxTroopFlank = getAmountSoldiersFlank(level) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100
 
-                if (pluginOptions.lowValueChests) {
-                    attackerBannerKhanTools.reverse()
-                    attackerNomadTools.reverse()
-                    attackerGateNomadTools.reverse()
-                    attackerWallNomadTools.reverse()
-                    attackerShieldNomadTools.reverse()
-                }
+                        let maxTools = maxToolsFlank
+                        if (index == 0) {
+                            wave.L.T.forEach((unitSlot, i) =>
+                                maxTools -= assignUnit(unitSlot, i == 0 ?
+                                    attackerWallNomadTools : attackerShieldNomadTools, Math.min(maxTools, desiredToolCount)))
 
-                attackerWallTools.sort((a, b) =>
-                    Number(a[0].wallBonus) - Number(b[0].wallBonus))
+                            maxTools = maxToolsFlank
+                            wave.R.T.forEach((unitSlot, i) =>
+                                maxTools -= assignUnit(unitSlot, i == 0 ?
+                                    attackerWallNomadTools : attackerShieldNomadTools, Math.min(maxTools, desiredToolCount)))
 
-                attackerShieldTools.sort((a, b) =>
-                    Number(a[0].defRangeBonus) - Number(b[0].defRangeBonus))
+                            maxTools = maxToolsFront
+                            wave.M.T.forEach((unitSlot, i) =>
+                                maxTools -= assignUnit(unitSlot, i == 0 ? attackerWallNomadTools :
+                                    i == 1 ? attackerGateNomadTools : attackerShieldNomadTools, Math.min(maxTools, desiredToolCount)))
 
-                attackerWallNomadTools.push(...attackerWallTools)
-                attackerShieldNomadTools.push(...attackerShieldTools)
+                            let maxTroops = maxTroopFlank
 
-                attackInfo.A.forEach((wave, index) => {
-                    const maxToolsFlank = getTotalAmountToolsFlank(level, 0)
-                    const maxToolsFront = getTotalAmountToolsFront(level)
+                            wave.L.U.forEach((unitSlot, i) =>
+                                maxTroops -= assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
+                                    attackerMeleeTroops : attackerRangeTroops, maxTroops))
+                            maxTroops = maxTroopFlank
+                            wave.R.U.forEach((unitSlot, i) =>
+                                maxTroops -= assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
+                                    attackerMeleeTroops : attackerRangeTroops, maxTroops))
+                            maxTroops = maxTroopFront
+                            wave.M.U.forEach((unitSlot, i) =>
+                                maxTroops -= assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
+                                    attackerMeleeTroops : attackerRangeTroops, maxTroops))
+                        }
+                        else if (!pluginOptions.noChests) {
+                            const selectTool = i => {
+                                let tools = pluginOptions.eventWallToolsfirst ? [] : attackerBannerKhanTools
+                                if (pluginOptions.wavesTillChests <= index) {
+                                    tools = attackerNomadTools
+                                    if (tools.length == 0) {
+                                        if (i == 0) {
+                                            tools = attackerWallNomadTools
+                                            if (tools.length == 0)
+                                                tools = attackerShieldNomadTools
+                                        }
+                                        else if (i == 1) {
+                                            tools = attackerShieldNomadTools
+                                            if (tools.length == 0)
+                                                tools = attackerWallNomadTools
+                                        }
+                                        if (i == 2) {
+                                            tools = attackerGateNomadTools
+                                            if (tools.length == 0)
+                                                tools = attackerWallNomadTools
+                                            if (tools.length == 0)
+                                                tools = attackerShieldNomadTools
+                                        }
+                                    }
+                                }
+                                return tools
+                            }
 
-                    const desiredToolCount = attackerNomadTools.length == 0 ? 20 : 10
-                    const commanderStats = getCommanderStats(commander)
-                    const maxTroopFront = getAmountSoldiersFront(level) * 1 + (commanderStats.relicAttackUnitAmountFront ?? 0) / 100
-                    const maxTroopFlank = getAmountSoldiersFlank(level) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100
-
-                    let maxTools = maxToolsFlank
-                    if (index == 0) {
-                        wave.L.T.forEach((unitSlot, i) =>
-                            maxTools -= assignUnit(unitSlot, i == 0 ?
-                                attackerWallNomadTools : attackerShieldNomadTools, Math.min(maxTools, desiredToolCount)))
-
-                        maxTools = maxToolsFlank
-                        wave.R.T.forEach((unitSlot, i) =>
-                            maxTools -= assignUnit(unitSlot, i == 0 ?
-                                attackerWallNomadTools : attackerShieldNomadTools, Math.min(maxTools, desiredToolCount)))
-
-                        maxTools = maxToolsFront
-                        wave.M.T.forEach((unitSlot, i) =>
-                            maxTools -= assignUnit(unitSlot, i == 0 ? attackerWallNomadTools :
-                                i == 1 ? attackerGateNomadTools : attackerShieldNomadTools, Math.min(maxTools, desiredToolCount)))
-
+                            wave.L.T.forEach((unitSlot, i) =>
+                                maxTools -= assignUnit(unitSlot, selectTool(0), maxTools))
+                            maxTools = maxToolsFlank
+                            wave.R.T.forEach((unitSlot, i) =>
+                                maxTools -= assignUnit(unitSlot, selectTool(1), maxTools))
+                            maxTools = maxToolsFront
+                            wave.M.T.forEach((unitSlot, i) =>
+                                maxTools -= assignUnit(unitSlot, selectTool(2), maxTools))
+                        }
                         let maxTroops = maxTroopFlank
 
                         wave.L.U.forEach((unitSlot, i) =>
-                            maxTroops -= assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
-                                attackerMeleeTroops : attackerRangeTroops, maxTroops))
+                            maxTroops -= assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
+                                attackerRangeTroops : attackerMeleeTroops, maxTroops))
                         maxTroops = maxTroopFlank
                         wave.R.U.forEach((unitSlot, i) =>
-                            maxTroops -= assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
-                                attackerMeleeTroops : attackerRangeTroops, maxTroops))
+                            maxTroops -= assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
+                                attackerRangeTroops : attackerMeleeTroops, maxTroops))
                         maxTroops = maxTroopFront
                         wave.M.U.forEach((unitSlot, i) =>
                             maxTroops -= assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
                                 attackerMeleeTroops : attackerRangeTroops, maxTroops))
-                    }
-                    else if (!pluginOptions.noChests) {
-                        const selectTool = i => {
-                            let tools = pluginOptions.eventWallToolsfirst ? [] : attackerBannerKhanTools
-                            if (pluginOptions.wavesTillChests <= index) {
-                                tools = attackerNomadTools
-                                if (tools.length == 0) {
-                                    if (i == 0) {
-                                        tools = attackerWallNomadTools
-                                        if (tools.length == 0)
-                                            tools = attackerShieldNomadTools
-                                    }
-                                    else if (i == 1) {
-                                        tools = attackerShieldNomadTools
-                                        if (tools.length == 0)
-                                            tools = attackerWallNomadTools
-                                    }
-                                    if (i == 2) {
-                                        tools = attackerGateNomadTools
-                                        if (tools.length == 0)
-                                            tools = attackerWallNomadTools
-                                        if (tools.length == 0)
-                                            tools = attackerShieldNomadTools
-                                    }
-                                }
-                            }
-                            return tools
-                        }
+                    });
+                    let maxTroops = getMaxUnitsInReinforcementWave(playerInfo.level, level)
+                    attackInfo.RW.forEach((unitSlot, i) => {
+                        let attacker = i & 1 ?
+                            (attackerMeleeTroops.length > 0 ? attackerMeleeTroops : attackerRangeTroops) :
+                            (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops)
 
-                        wave.L.T.forEach((unitSlot, i) =>
-                            maxTools -= assignUnit(unitSlot, selectTool(0), maxTools))
-                        maxTools = maxToolsFlank
-                        wave.R.T.forEach((unitSlot, i) =>
-                            maxTools -= assignUnit(unitSlot, selectTool(1), maxTools))
-                        maxTools = maxToolsFront
-                        wave.M.T.forEach((unitSlot, i) =>
-                            maxTools -= assignUnit(unitSlot, selectTool(2), maxTools))
-                    }
-                    let maxTroops = maxTroopFlank
-
-                    wave.L.U.forEach((unitSlot, i) =>
-                        maxTroops -= assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
-                            attackerRangeTroops : attackerMeleeTroops, maxTroops))
-                    maxTroops = maxTroopFlank
-                    wave.R.U.forEach((unitSlot, i) =>
-                        maxTroops -= assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
-                            attackerRangeTroops : attackerMeleeTroops, maxTroops))
-                    maxTroops = maxTroopFront
-                    wave.M.U.forEach((unitSlot, i) =>
-                        maxTroops -= assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
-                            attackerMeleeTroops : attackerRangeTroops, maxTroops))
-                });
-                let maxTroops = getMaxUnitsInReinforcementWave(playerInfo.level, level)
-                attackInfo.RW.forEach((unitSlot, i) => {
-                    let attacker = i & 1 ?
-                        (attackerMeleeTroops.length > 0 ? attackerMeleeTroops : attackerRangeTroops) :
-                        (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops)
-
-                    maxTroops -= assignUnit(unitSlot, attacker,
-                        Math.floor(maxTroops / 2))
-                })
+                        maxTroops -= assignUnit(unitSlot, attacker,
+                            Math.floor(maxTroops / 2))
+                    })
+                }
 
                 await areaInfoLock(() => sendXT("cra", JSON.stringify(attackInfo)))
                 let [obj, r] = await waitForResult("cra", 1000 * 10, (obj, result) => {

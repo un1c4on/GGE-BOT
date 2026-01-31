@@ -19,13 +19,14 @@ const HighscoreType = Object.freeze({
     honour: 5
 });
 const MinuteSkipType = Object.freeze({
-    MS0: 1,
-    MS1: 5,
-    MS2: 10,
-    MS3: 30,
-    MS4: 60,
-    MS5: 60 * 5,
-    MS6: 60 * 24,
+    MS0: 1,      // Genelde 1 dk veya özel
+    MS1: 1,      // Loglarda 1 dakika olduğu görüldü
+    MS2: 5,      // Loglarda 5 dakika olduğu görüldü
+    MS3: 10,     // Loglarda 10 dakika olduğu görüldü
+    MS4: 30,     // Loglarda 30 dakika olduğu görüldü
+    MS5: 60,     // Kullanıcı beyanı: 1 Saat
+    MS6: 60 * 5, // Tahmini 5 Saat
+    MS12: 60 * 24 // Tahmini 24 Saat (MS6 değilse MS12 olabilir, genelde MS6 veya MS24 olur)
 });
 
 const skips = {
@@ -49,30 +50,49 @@ xtHandler.on("sce", (obj) => {
     })
 })
 
-const spendSkip = (time) => {
-    let skip = Object.entries(skips)
+const spendSkip = (time, strategy = 0) => {
+    // 1. Mevcut skipleri al
+    let availableSkips = Object.entries(skips)
         .filter(e => e[1] > 0)
-        .filter(e => MinuteSkipType[e[0]] * 2 <= time)
-        .sort((a, b) => MinuteSkipType[b[0]] - MinuteSkipType[a[0]])
-        .sort((a, b) => {
-            if (a[1] >= 999 && b[1] >= 999)
-                return 0
-            if (MinuteSkipType[a[0]] > time || MinuteSkipType[b[0]] > time)
-                return 0
 
-            if (a[1] >= 999)
-                return -1
-            if (b[1] >= 999)
-                return 1
-        })
+    // Strategy 0: Smallest First (Küçükten Büyüğe)
+    // Strategy 1: Best Fit (Büyükten Küçüğe - Süreye sığan en büyüğü bulmak için)
+    if (strategy == 1) {
+        availableSkips.sort((a, b) => MinuteSkipType[b[0]] - MinuteSkipType[a[0]])
+    } else {
+        availableSkips.sort((a, b) => MinuteSkipType[a[0]] - MinuteSkipType[b[0]])
+    }
 
-    if (skip[0] == undefined) {
-        console.warn(`[Protocols] Failed to find skip`)
-        console.warn(JSON.stringify(skips))
+    if (availableSkips.length === 0) {
+        console.warn(`[Protocols] Failed to find skip for time: ${time}s (Inventory Empty)`)
         return undefined
     }
 
-    return skip[0][0]
+    // 2. Sürenin içine sığan uygun skipi bul
+    let selected = availableSkips.find(e => (MinuteSkipType[e[0]] * 60) <= time)
+
+    // 3. Fallback (Overkill): Eğer süreye sığan (küçük) skip yoksa...
+    if (!selected) {
+        // "Best Fit" modundaysak ve hiçbiri sığmıyorsa (örn: süre 5dk, en küçük skip 10dk),
+        // mecburen en küçüğü seçmeliyiz ki az ziyan olsun. 
+        // Best fit descending sıralı olduğu için listenin SON elemanı en küçüktür.
+        if (strategy == 1) {
+             selected = availableSkips[availableSkips.length - 1]
+        } else {
+             // Smallest first ascending sıralı olduğu için İLK eleman en küçüktür.
+             selected = availableSkips[0]
+        }
+        
+        console.debug(`[Protocols] Overkill skip selected: ${selected[0]} (${MinuteSkipType[selected[0]]*60}s) for remaining: ${time}s`)
+    }
+
+    if (!selected) {
+        console.warn(`[Protocols] Failed to find skip logic error.`)
+        return undefined
+    }
+
+    console.debug(`[Protocols] Selected skip: ${selected[0]} for remaining time: ${time}s (Strategy: ${strategy})`);
+    return selected[0]
 }
 
 const KingdomSkipType = Object.freeze({

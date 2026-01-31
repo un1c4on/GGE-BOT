@@ -11,6 +11,7 @@ const { Types, getResourceCastleList, ClientCommands, areaInfoLock, AreaType, Ki
 const { waitToAttack, getAttackInfo, assignUnit, getAmountSoldiersFlank, getMaxUnitsInReinforcementWave } = require("./attack")
 const { movementEvents, waitForCommanderAvailable, freeCommander, useCommander } = require("../commander")
 const { sendXT, waitForResult, xtHandler, botConfig, playerInfo } = require("../../ggebot")
+const { applyPreset } = require("../../plugins/attack/presets")
 const getAreaCached = require('../../getmap.js')
 const err = require('../../err.json')
 const units = require("../../items/units.json")
@@ -58,6 +59,11 @@ async function fortressHit(name, kid, level, options) {
     Object.assign(pluginOptions, options ?? {})
     Object.assign(pluginOptions, botConfig.plugins["attack"] ?? {})
     
+    // Defaults for preset options
+    pluginOptions.useGamePreset ??= false;
+    pluginOptions.presetID ??= "0";
+    pluginOptions.maxWaves ??= 3; // Default index 3 (4 waves)
+
     let towerTime = new WeakMap()
     let sortedAreaInfo = []
     const movements = []
@@ -138,65 +144,76 @@ async function fortressHit(name, kid, level, options) {
 
                 let AI = sortedAreaInfo.splice(index, 1)[0]
 
-                const attackInfo = getAttackInfo(kid, sourceCastleArea, AI, commander, level, undefined, pluginOptions.useCoin)
+                const maxWaves = (pluginOptions.maxWaves !== undefined ? Number(pluginOptions.maxWaves) : 3) + 1;
+                const attackInfo = getAttackInfo(kid, sourceCastleArea, AI, commander, level, maxWaves, pluginOptions.useCoin)
 
-                const attackerMeleeTroops = []
-                const attackerRangeTroops = []
+                // --- PRESET LOGIC ---
+                if (pluginOptions.useGamePreset) {
+                    const presetResult = applyPreset(attackInfo, pluginOptions.presetID, maxWaves);
+                    if (!presetResult.success) {
+                        console.warn(`[${name}] Preset Error: ${presetResult.error}`);
+                        throw "PRESET_ERROR: " + presetResult.error;
+                    }
+                    console.log(`[${name}] Game Preset Applied (ID: ${pluginOptions.presetID}, Waves: ${maxWaves})`);
+                } else {
+                    const attackerMeleeTroops = []
+                    const attackerRangeTroops = []
 
-                for (let i = 0; i < sourceCastle.unitInventory.length; i++) {
-                    const unit = sourceCastle.unitInventory[i]
-                    const unitInfo = units.find(obj => unit.unitID == obj.wodID)
-                    if (unitInfo == undefined)
-                        continue
-
-                    if (unitInfo.fightType == 0) {
-                        if(kid == KingdomID.firePeaks && 
-                            unitInfo.wodID == 277)
+                    for (let i = 0; i < sourceCastle.unitInventory.length; i++) {
+                        const unit = sourceCastle.unitInventory[i]
+                        const unitInfo = units.find(obj => unit.unitID == obj.wodID)
+                        if (unitInfo == undefined)
                             continue
-                        if (unitInfo.role == "melee")
-                            attackerMeleeTroops.push([unitInfo, unit.ammount])
-                        else if (unitInfo.role == "ranged")
-                            attackerRangeTroops.push([unitInfo, unit.ammount])
+
+                        if (unitInfo.fightType == 0) {
+                            if(kid == KingdomID.firePeaks && 
+                                unitInfo.wodID == 277)
+                                continue
+                            if (unitInfo.role == "melee")
+                                attackerMeleeTroops.push([unitInfo, unit.ammount])
+                            else if (unitInfo.role == "ranged")
+                                attackerRangeTroops.push([unitInfo, unit.ammount])
+                        }
                     }
+
+                    attackerMeleeTroops.sort((a, b) => Number(b[0].speed) - Number(a[0].speed))
+                    attackerRangeTroops.sort((a, b) => Number(b[0].speed) - Number(a[0].speed))
+
+                    let allTroopCount = 0
+
+                    attackerRangeTroops.forEach(e => allTroopCount += e[1])
+                    attackerMeleeTroops.forEach(e => allTroopCount += e[1])
+
+                    if (allTroopCount < minTroopCount)
+                        throw "NO_MORE_TROOPS"
+
+                    attackInfo.A.forEach((wave, i) => {
+                        if(i > 2 && kid != KingdomID.firePeaks)
+                            return
+                        if(i > 4 && kid == KingdomID.firePeaks)
+                            return
+                        
+                        const maxTroopFlank = getAmountSoldiersFlank(level)
+
+                        let maxTroops = maxTroopFlank
+
+                        wave.L.U.forEach((unitSlot, i) =>
+                            maxTroops -= assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
+                                attackerRangeTroops : attackerMeleeTroops, maxTroops))
+
+                        if (!hasShieldMadiens) {
+                            let maxTroops = getMaxUnitsInReinforcementWave(playerInfo.level, level)
+                            attackInfo.RW.forEach((unitSlot, i) => {
+                                let attacker = i & 1 ?
+                                    (attackerMeleeTroops.length > 0 ? attackerMeleeTroops : attackerRangeTroops) :
+                                    (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops)
+
+                                maxTroops -= assignUnit(unitSlot, attacker,
+                                    Math.floor(maxTroops / 2))
+                            })
+                        }
+                    })
                 }
-
-                attackerMeleeTroops.sort((a, b) => Number(b[0].speed) - Number(a[0].speed))
-                attackerRangeTroops.sort((a, b) => Number(b[0].speed) - Number(a[0].speed))
-
-                let allTroopCount = 0
-
-                attackerRangeTroops.forEach(e => allTroopCount += e[1])
-                attackerMeleeTroops.forEach(e => allTroopCount += e[1])
-
-                if (allTroopCount < minTroopCount)
-                    throw "NO_MORE_TROOPS"
-
-                attackInfo.A.forEach((wave, i) => {
-                    if(i > 2 && kid != KingdomID.firePeaks)
-                        return
-                    if(i > 4 && kid == KingdomID.firePeaks)
-                        return
-                    
-                    const maxTroopFlank = getAmountSoldiersFlank(level)
-
-                    let maxTroops = maxTroopFlank
-
-                    wave.L.U.forEach((unitSlot, i) =>
-                        maxTroops -= assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
-                            attackerRangeTroops : attackerMeleeTroops, maxTroops))
-
-                    if (!hasShieldMadiens) {
-                        let maxTroops = getMaxUnitsInReinforcementWave(playerInfo.level, level)
-                        attackInfo.RW.forEach((unitSlot, i) => {
-                            let attacker = i & 1 ?
-                                (attackerMeleeTroops.length > 0 ? attackerMeleeTroops : attackerRangeTroops) :
-                                (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops)
-
-                            maxTroops -= assignUnit(unitSlot, attacker,
-                                Math.floor(maxTroops / 2))
-                        })
-                    }
-                })
 
                 await areaInfoLock(() => sendXT("cra", JSON.stringify(attackInfo)))
 

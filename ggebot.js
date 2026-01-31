@@ -14,7 +14,19 @@ const botConfig = workerData
 const _console = console
 
 function mngLog(msg,logLevel) {
-    _console.log(`[${botConfig.name}] ${msg}`)
+    // Ensure msg is a string
+    if (typeof msg !== 'string') {
+        try { msg = JSON.stringify(msg); } catch { msg = String(msg); }
+    }
+    
+    // Use process.stdout.write to avoid recursion with overridden console.log
+    process.stdout.write(`[${botConfig.name}] ${msg}\n`);
+
+    // Filter out system warnings from the web interface logs
+    if (msg.includes("ExperimentalWarning") || msg.includes("(node:") || msg.includes("Use `node --trace-warnings")) {
+        return;
+    }
+
     const now = new Date()
     let hours = now.getHours()
     let minutes = now.getMinutes()
@@ -25,13 +37,23 @@ function mngLog(msg,logLevel) {
     parentPort.postMessage([ActionType.GetLogs,[logLevel, `[${hours + ':' + minutes}] ` + msg]])
 }
 if (!botConfig.internalWorker) {
-    console = {}
-    console.log = msg => mngLog(msg, 0)
-    console.info = msg => mngLog(msg, 0)
-    console.warn = msg => mngLog(msg, 1)
-    console.error = msg => mngLog(msg, 2)
-    console.debug = _console.debug
-    console.trace = _console.trace
+    // Override console methods to capture logs
+    console.log = (...args) => {
+        const msg = args.map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg))).join(' ');
+        mngLog(msg, 0);
+    };
+    console.info = (...args) => {
+        const msg = args.map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg))).join(' ');
+        mngLog(msg, 0);
+    };
+    console.warn = (...args) => {
+        const msg = args.map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg))).join(' ');
+        mngLog(msg, 1);
+    };
+    console.error = (...args) => {
+        const msg = args.map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg))).join(' ');
+        mngLog(msg, 2);
+    };
 }
 
 events.on("configModified", () => {
@@ -128,6 +150,21 @@ const playerInfo = {
     }
 }
 
+playerInfo.presets = []; // Initialize empty presets array
+
+xtHandler.on("gas", obj => {
+    if (obj && obj.S) {
+        playerInfo.presets = obj.S.map(p => ({
+            id: p.S,
+            name: p.SN,
+            army: p.A // Keep as string or parse if needed later
+        }));
+        
+        // Sync presets to UI if needed
+        syncStatus({ presets: playerInfo.presets });
+    }
+});
+
 xtHandler.on("gal", obj => {
     playerInfo.alliance.id = Number(obj.AID)
     playerInfo.alliance.rank = Number(obj.R)
@@ -158,8 +195,25 @@ xtHandler.on("gpi", obj => {
     playerInfo.isCheater = Boolean(obj.CL)
 })
 
-module.exports = { sendXT, xtHandler, waitForResult, webSocket, events, botConfig, playerInfo }
+// CANLI DURUM SENKRONİZASYONU
+let status = { id: botConfig.id, inventory: [] }
+const syncStatus = (newData) => {
+    Object.assign(status, newData);
+    parentPort.postMessage([ActionType.StatusUser, { ...status }]);
+};
+
+module.exports = { sendXT, xtHandler, waitForResult, webSocket, events, botConfig, playerInfo, syncStatus }
+
+xtHandler.on("gin", obj => {
+    if (obj && obj.I) {
+        const inventory = obj.I.map(item => ({ wodID: Number(item.WID), count: Number(item.C) }));
+        syncStatus({ inventory });
+    }
+});
+
 require("./protocols.js")
+// ... (plugin yükleme kısmı aynı kalacak)
+
 for (const [_,val] of Object.entries(botConfig.plugins)) {
     if(!val.state)
         continue
@@ -209,7 +263,7 @@ webSocket.onmessage = async (e) => {
     else if (message.charAt(0) == "<") {
         switch (message) {
             case "<msg t='sys'><body action='apiOK' r='0'></body></msg>":
-                webSocket.send(`<msg t="sys"><body action="login" r="0"><login z="${botConfig.gameServer}"><nick><![CDATA[]]></nick><pword><![CDATA[undefined%en%0]]></pword></login></body></msg>`)
+                webSocket.send(`<msg t="sys"><body action="login" r="0"><login z="${botConfig.gameServer}"><nick><![CDATA[]]></nick><pword><![CDATA[${botConfig.game_username}%${botConfig.game_password_encrypted}%0]]></pword></login></body></msg>`)
                 break
             case "<msg t='sys'><body action='joinOK' r='1'><pid id='0'/><vars /><uLs r='1'></uLs></body></msg>":
                 webSocket.send('<msg t="sys"><body action="roundTrip" r="1"></body></msg>')
@@ -229,21 +283,30 @@ events.on("unload", () => {
 })
 
 const { getResourceCastleList, AreaType, KingdomID, Types } = require('./protocols.js');
-let status = {}
 events.once("load", async (_, r) => {
     const sourceCastleArea = (await getResourceCastleList()).castles.find(e => e.kingdomID == KingdomID.stormIslands)?.areaInfo.find(e => e.type == AreaType.externalKingdom);
 
     sendXT("dcl", JSON.stringify({ CD: 1 }))
-    setInterval(() =>
-        sendXT("dcl", JSON.stringify({ CD: 1 })),
-        1000 * 60 * 5)
+    sendXT("gin", "{}") 
+    sendXT("gas", JSON.stringify({ "KID": 0 })); // Fetch presets on load. KID 0 is usually fine for global presets.
+
+    setInterval(() => {
+        sendXT("dcl", JSON.stringify({ CD: 1 }))
+        sendXT("gin", "{}")
+    }, 1000 * 60 * 5)
+
     if (!sourceCastleArea) {
         xtHandler.on("dcl", obj => {
-            const castleProd = Types.DetailedCastleList(obj)
-                .castles.find(a => a.kingdomID == KingdomID.stormIslands)?.areaInfo[0]
+            const detailedList = Types.DetailedCastleList(obj);
+            const castleProd = detailedList.castles.find(a => a.kingdomID == KingdomID.stormIslands)?.areaInfo[0]
 
-            if (!castleProd)
-                return
+            const mainCastle = detailedList.castles.find(a => a.kingdomID == 0)?.areaInfo[0];
+            if (mainCastle && mainCastle.unitInventory) {
+                const inventory = mainCastle.unitInventory.map(u => ({ wodID: u.unitID, count: u.ammount }));
+                syncStatus({ inventory, food: mainCastle.food, coin: mainCastle.coin, rubies: mainCastle.rubies });
+            }
+
+            if (!castleProd) return
 
             Object.assign(status, {
                 aquamarine: castleProd.aqua != 0 ? Math.floor(castleProd.aqua) : undefined,

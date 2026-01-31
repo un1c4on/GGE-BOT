@@ -1,18 +1,37 @@
 version: '3.8'
 
 services:
-  db:
+  gge-bot:
+    build: .
+    container_name: gge-bot-container
+    restart: always
+    ports:
+      - "3002:3002"
+    environment:
+      - WEB_PORT=3002
+      - DB_HOST=postgres-db
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASS=un1c4on
+      - DB_NAME=ggebot_db
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
+    depends_on:
+      - postgres-db
+
+  postgres-db:
     image: postgres:15-alpine
-    container_name: ggebot_postgres
+    container_name: gge-bot-postgres
     restart: always
     environment:
-      POSTGRES_USER: un1c4on
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: un1c4on
       POSTGRES_DB: ggebot_db
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
 
 volumes:
-  postgres_data:
+  pgdata:
