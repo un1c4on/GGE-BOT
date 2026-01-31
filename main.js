@@ -626,7 +626,7 @@ async function start() {
       ws.send(JSON.stringify([ErrorType.Success, ActionType.GetUsers, [getUser(uuid), plugins]]))
 
     let uuid = req.headers.cookie?.split('; ').find(e => e.startsWith('uuid='))
-      .substring(5, Infinity)
+      ?.substring(5, Infinity)
 
     if (!loginCheck(uuid))
       return ws.send(JSON.stringify([ErrorType.Unauthenticated, ActionType.GetUUID, {}]))
