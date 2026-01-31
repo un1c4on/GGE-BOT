@@ -148,8 +148,11 @@ const removeUser = async (userId, user) => {
 }
 
 const getUser = async userId => {
-  if (userId && isNaN(userId)) return [];
-  const where = userId ? { UserId: userId } : {};
+  // GÜVENLİK YAMASI: userId yoksa ASLA veri döndürme.
+  // Eskiden: userId ? { ... } : {} yapıyordu, bu da ID yoksa herkesi getiriyordu.
+  if (!userId) return [];
+  
+  const where = { UserId: userId };
   const rows = await GameAccount.findAll({
     where,
     include: [BotConfig, DBUser]
@@ -455,7 +458,10 @@ async function start() {
     if (worker) { botMap.delete(id); worker.terminate() }
   }
 
-  const allUsers = await getUser()
+  // SUNUCU BAŞLANGICINDA TÜM BOTLARI ÇEK (Admin/Sistem yetkisiyle)
+  const allGameAccounts = await GameAccount.findAll({ include: [BotConfig, DBUser] });
+  const allUsers = allGameAccounts.map(e => new User(e.get({ plain: true })));
+
   for (const u of allUsers) { 
     // --- ABONELİK KONTROLÜ (BOT BAŞLATMA) ---
     // User nesnesine DBUser dahil edildiği için u.User üzerinden erişebiliriz (GameAccount -> User ilişkisi)
