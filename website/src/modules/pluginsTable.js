@@ -40,7 +40,7 @@ const PluginOption = ({ pluginData, parentKey, userPlugins, onChange, t }) => {
             return <FormControl fullWidth size="small" sx={{ my: 1 }}>
                 <InputLabel>{t(pluginData.label)}</InputLabel>
                 <Select value={currentValue} label={pluginData.label} onChange={(e) => handleChange(e.target.value)}>
-                    {pluginData.selection.map((e, i) => <MenuItem value={i} key={i}>{e}</MenuItem>)}
+                    {pluginData.selection.map((e, i) => <MenuItem value={i} key={i}>{t(e)}</MenuItem>)}
                 </Select>
             </FormControl>
         case "Slider":

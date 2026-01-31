@@ -32,5 +32,6 @@
 	"Select language": "Select Language",
 	"Successfully saved": "Changes saved successfully!",
 	"started": "started",
-	"gameAccountSessionAlreadyInUse": "gameAccountSessionAlreadyInUse"
+	"gameAccountSessionAlreadyInUse": "gameAccountSessionAlreadyInUse",
+	"subscriptionExpired": "subscriptionExpired"
 }

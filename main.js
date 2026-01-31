@@ -277,8 +277,9 @@ async function start() {
         password_hash: password // Prod ortamında hashlenmeli!
       });
       
-      req.session.userId = newUser.id;
-      req.session.save();
+      // GÜVENLİK: Otomatik giriş yapma. Kullanıcıyı login sayfasına yönlendir ki abonelik kontrolü yapılabilsin.
+      // req.session.userId = newUser.id;
+      // req.session.save();
       
       res.json({ success: true, userId: newUser.id });
     } catch (err) {

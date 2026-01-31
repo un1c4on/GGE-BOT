@@ -20,12 +20,6 @@ if (isMainThread) {
             },
             {
                 type: "Text",
-                label: "Max Waves (1-4)",
-                key: "attackWaves",
-                default: "4"
-            },
-            {
-                type: "Text",
                 label: "Com White List",
                 key: "commanderWhiteList"
             },

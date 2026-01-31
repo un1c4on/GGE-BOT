@@ -1,5 +1,5 @@
 const { isMainThread } = require('node:worker_threads')
-const name = "AutoRecruit"
+const name = "autoRecruit"
 
 if (isMainThread) {
     module.exports = {

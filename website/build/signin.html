@@ -1,33 +1,176 @@
-<html>
-
+<!DOCTYPE html>
+<html lang="en">
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <script src="js/index.js"></script>
-    <link rel="stylesheet" href="css/index.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - GGE-BOT</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #050c1a;
+            font-family: 'Inter', sans-serif;
+            color: #fff;
+        }
+        .login-card {
+            background-color: #0a1929;
+            padding: 2.5rem;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 400px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        .logo-container {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .logo-container h1 {
+            margin: 0;
+            font-size: 1.8rem;
+            background: linear-gradient(45deg, #90caf9, #42a5f5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+        }
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #90caf9;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        input {
+            width: 100%;
+            padding: 0.75rem;
+            border-radius: 6px;
+            border: 1px solid #333;
+            background-color: #000;
+            color: #fff;
+            font-size: 1rem;
+            box-sizing: border-box; /* Padding dahil genişlik */
+            transition: border-color 0.2s;
+        }
+        input:focus {
+            outline: none;
+            border-color: #90caf9;
+        }
+        .btn {
+            width: 100%;
+            padding: 0.75rem;
+            border: none;
+            border-radius: 6px;
+            background-color: #90caf9;
+            color: #000;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        .btn:hover {
+            background-color: #42a5f5;
+        }
+        .btn:active {
+            transform: scale(0.98);
+        }
+        .footer {
+            margin-top: 1.5rem;
+            text-align: center;
+            font-size: 0.85rem;
+            color: #888;
+        }
+        .footer a {
+            color: #90caf9;
+            text-decoration: none;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        .error-msg {
+            background-color: rgba(255, 82, 82, 0.1);
+            color: #ff5252;
+            padding: 0.75rem;
+            border-radius: 6px;
+            margin-bottom: 1.5rem;
+            border: 1px solid rgba(255, 82, 82, 0.2);
+            font-size: 0.9rem;
+            display: none;
+            text-align: center;
+        }
+    </style>
 </head>
-<div class="front-panel-anchor ">
-    <div class="front-panel">
-        <div class="banner">
-            <a href="signup.html" style="text-align: left; margin:10px">Sign Up</a>
+<body>
+
+<div class="login-card">
+    <div class="logo-container">
+        <h1>GGE-BOT</h1>
+        <p style="color: #666; margin-top: 0.5rem;">Control Panel Access</p>
+    </div>
+
+    <div id="errorBox" class="error-msg"></div>
+
+    <form id="loginForm">
+        <div class="form-group">
+            <label for="email">Username or Email</label>
+            <input type="text" id="email" name="email" required placeholder="Enter your username">
         </div>
-        <img src="logo192.png" class="ashes-logo" alt="">
-        <form id="login-form">
-            <div class="input-field-container">
-                <div class="login-info-banner" id="login-info-banner"></div>
-                <li><input type="text" class="input-field" id="email_name" placeholder="Username"></li>
-                <li><input type="password" class="input-field" id="password" placeholder="Password"></li>
-                <li>
-                    <div class="remember-password"><input type="checkbox" id="remember-password"><span>Remember
-                            Password</span></div>
-                </li>
-                <li><button type="submit" class="signin-signout">Login</button></li>
-            </div>
-        </form>
-        <div class="footer">
-            <div><a href="signup.html" style="text-align: right; margin:10px">Forgot Password</a></div>
-            <div><a href="privacypolicy.html">Privacy policy</a></div>
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required placeholder="••••••••">
         </div>
+        <button type="submit" class="btn" id="loginBtn">Sign In</button>
+    </form>
+
+    <div class="footer">
+        Don't have an account? <a href="signup.html">Sign Up</a>
     </div>
 </div>
 
+<script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('loginBtn');
+        const errorBox = document.getElementById('errorBox');
+        
+        btn.disabled = true;
+        btn.innerText = "Signing in...";
+        errorBox.style.display = 'none';
+
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+
+        try {
+            const res = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                window.location.href = '/';
+            } else {
+                errorBox.innerText = data.error || "Login failed.";
+                errorBox.style.display = 'block';
+            }
+        } catch (err) {
+            errorBox.innerText = "Connection error. Please try again.";
+            errorBox.style.display = 'block';
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "Sign In";
+        }
+    });
+</script>
+
+</body>
 </html>

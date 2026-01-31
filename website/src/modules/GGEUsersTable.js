@@ -13,14 +13,15 @@ import { getTranslation } from '../translations.js'
 
 function Log(props) {
     const [currentLogs, setCurrentLogs] = React.useState([])
-    const { t } = props;
+    const { t, isOpen } = props;
 
     React.useEffect(() => {
         const logGrabber = msg => {
             let [err, action, obj] = JSON.parse(msg.data.toString())
             if (Number(action) !== ActionType.GetLogs || Number(err) !== ErrorType.Success) return
+            
             setCurrentLogs(obj[0].splice(obj[1], obj[0].length - 1).concat(obj[0]).map((obj, index) =>
-                <div key={index} style={{
+                <div key={`${Date.now()}-${index}`} style={{
                     color: obj[0] === LogLevel.Error ? "#ff5555" : obj[0] === LogLevel.Warn ? "#ffb86c" : "#8be9fd",
                     fontFamily: 'monospace', borderBottom: '1px solid #333', padding: '2px 0'
                 }}>
@@ -30,8 +31,14 @@ function Log(props) {
             ).reverse())
         }
         props.ws.addEventListener("message", logGrabber)
+        
+        // Log penceresi AÇIKSA ve kullanıcı belliyse iste
+        if (props.user && isOpen) {
+            props.ws.send(JSON.stringify([ErrorType.Success, ActionType.GetLogs, props.user]));
+        }
+
         return () => props.ws.removeEventListener("message", logGrabber)
-    }, [props.ws, props.user])
+    }, [props.ws, props.user, isOpen]) // isOpen bağımlılığı eklendi
 
     return (
         <Paper sx={{ maxHeight: '90%', overflow: 'hidden', height: '80%', width: '60%', bgcolor: '#000', color: '#f8f8f2', display: 'flex', flexDirection: 'column' }}>
@@ -151,7 +158,7 @@ export default function GGEUserTable(props) {
                                             </Box>
                                         </TableCell>
                                         <TableCell align="right">
-                                            <Button size="small" onClick={() => { props.ws.send(JSON.stringify([ErrorType.Success, ActionType.GetLogs, row])); setLogUser(row); handleLogOpen() }}>{t("Logs")}</Button>
+                                            <Button size="small" onClick={() => { setLogUser(row); handleLogOpen() }}>{t("Logs")}</Button>
                                             <Button size="small" onClick={() => props.onSelectUser(row)}>{t("Settings")}</Button>
                                             <Button size="small" variant="contained" color={state ? "error" : "success"} onClick={() => {
                                                 row.state = !state; props.ws.send(JSON.stringify([ErrorType.Success, ActionType.SetUser, row])); setState(!state)
@@ -171,7 +178,7 @@ export default function GGEUserTable(props) {
     return (
         <>
             <Backdrop sx={theme => ({ color: '#fff', zIndex: theme.zIndex.drawer + 1 })} open={openLogs} onClick={() => { props.ws.send(JSON.stringify([ErrorType.Success, ActionType.GetLogs, undefined])); handleLogClose() }}>
-                <Log ws={props.ws} t={t} user={logUser}/>
+                <Log ws={props.ws} t={t} user={logUser} isOpen={openLogs}/>
             </Backdrop>
             
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>

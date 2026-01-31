@@ -48,7 +48,7 @@ export const translations = {
         "Attack Khan": "Attack Khan",
         "Attack Aqua Forts": "Attack Aqua Forts",
         "Hits Barrons": "Hits Barrons",
-        "Attack": "Attack",
+        "Attack": "General Attack Settings",
         "Handles Hits": "Handles Hits",
         "commander": "Commander",
         "Commander": "Commander",
@@ -66,6 +66,7 @@ export const translations = {
         "Timer Manager": "Timer Manager",
         "attack": "General Attack",
         "berikingdom": "Berimond Kingdom",
+        "Attack Berimond Kingdom": "Berimond Kingdom",
         "attackbarronsempire": "Empire Baron Attack",
         "attackbarronsfire": "Fire Baron Attack",
         "attackbarronsglacier": "Glacier Baron Attack",
@@ -93,7 +94,23 @@ export const translations = {
         "Sends Resources": "Sends resources between castles automatically",
         "Repair for Mead": "Repairs using Mead automatically",
         "Automatic feast management": "Manages feasts automatically",
-        "Manage mead production and consumption": "Manages mead production and consumption"
+        "Manage mead production and consumption": "Manages mead production and consumption",
+        
+        // Plugin Options & Difficulties
+        "Easy": "Easy", "Easy+": "Easy+", "Intermediate": "Intermediate", "Intermediate+": "Intermediate+",
+        "Hard": "Hard", "Hard+": "Hard+", "Expert": "Expert", "Expert+": "Expert+",
+        "Master": "Master", "Master+": "Master+", "Archmaster": "Archmaster",
+        "Event Difficulty": "Event Difficulty", "Com White List": "Com White List", "Use Coin": "Use Coin", "No chests": "No chests",
+        "Use Time Skips": "Use Time Skips", "Skip Strategy": "Skip Strategy",
+        "Smallest First (Save Big Skips)": "Smallest First (Save Big Skips)", "Best Fit (Fastest)": "Best Fit (Fastest)",
+        "Nomad score shutoff": "Nomad score shutoff", "Samurai score shutoff": "Samurai score shutoff",
+        "Lowest value chests first": "Lowest value chests first", "Use event Wall Tools first": "Use event Wall Tools first",
+        "Smart Unit Replacement": "Smart Unit Replacement", "Auto Transfer Troops (Every 15m)": "Auto Transfer Troops (Every 15m)",
+        "Use Feather (Travel Boost)": "Use Feather (Travel Boost)", "Attack Plan JSON": "Attack Plan JSON",
+        "Use Game Preset": "Use Game Preset", "Preset ID (Slot Number)": "Preset ID (Slot Number)",
+        "Max Waves": "Max Waves", "1 Wave": "1 Wave", "2 Waves": "2 Waves", "3 Waves": "3 Waves", "4 Waves": "4 Waves",
+        "Attack Delay (Seconds)": "Attack Delay (Seconds)", "Attack Delay Randomization (Seconds)": "Attack Delay Randomization (Seconds)",
+        "Attack Left Flank": "Attack Left Flank", "Attack Middle": "Attack Middle", "Attack Right Flank": "Attack Right Flank"
     },
     tr: {
         "Dashboard": "Kontrol Paneli",
@@ -144,7 +161,7 @@ export const translations = {
         "Attack Khan": "Han Saldırısı",
         "Attack Aqua Forts": "Ada Saldırısı",
         "Hits Barrons": "Baron Vuruşları",
-        "Attack": "Genel Saldırı",
+        "Attack": "Genel Saldırı Ayarları",
         "Handles Hits": "Vuruşları Yönetir",
         "commander": "Komutan",
         "Commander": "Komutan",
@@ -162,6 +179,7 @@ export const translations = {
         "Timer Manager": "Zamanlayıcı Yöneticisi",
         "attack": "Genel Saldırı",
         "berikingdom": "Berimond Krallığı",
+        "Attack Berimond Kingdom": "Berimond Krallığı",
         "attackbarronsempire": "İmparatorluk Baron Saldırısı",
         "attackbarronsfire": "Alev Baron Saldırısı",
         "attackbarronsglacier": "Buz Baron Saldırısı",
@@ -189,7 +207,23 @@ export const translations = {
         "Sends Resources": "Kaleler arası otomatik kaynak gönderir",
         "Repair for Mead": "Bal şarabı ile otomatik onarım yapar",
         "Automatic feast management": "Şölenleri otomatik yönetir",
-        "Manage mead production and consumption": "Mey üretim ve tüketimini yönetir"
+        "Manage mead production and consumption": "Mey üretim ve tüketimini yönetir",
+        
+        // Eklenti Ayarları ve Zorluklar
+        "Easy": "Kolay", "Easy+": "Kolay+", "Intermediate": "Orta", "Intermediate+": "Orta+",
+        "Hard": "Zor", "Hard+": "Zor+", "Expert": "Uzman", "Expert+": "Uzman+",
+        "Master": "Usta", "Master+": "Usta+", "Archmaster": "Büyük Usta",
+        "Event Difficulty": "Etkinlik Zorluğu", "Com White List": "Komutan Listesi (ID)", "Use Coin": "Altın Kullan", "No chests": "Sandık Toplama",
+        "Use Time Skips": "Süregeç Kullan", "Skip Strategy": "Atlama Stratejisi",
+        "Smallest First (Save Big Skips)": "En Küçük Önce (Büyükleri Sakla)", "Best Fit (Fastest)": "En Uygun (En Hızlı)",
+        "Nomad score shutoff": "Göçebe Puan Limiti (Durdur)", "Samurai score shutoff": "Samuray Puan Limiti (Durdur)",
+        "Lowest value chests first": "Düşük Değerli Sandıklar Önce", "Use event Wall Tools first": "Etkinlik Aletlerini Kullan",
+        "Smart Unit Replacement": "Akıllı Asker Değişimi", "Auto Transfer Troops (Every 15m)": "Otomatik Asker Transferi (15dk)",
+        "Use Feather (Travel Boost)": "Tüy Kullan (Hız)", "Attack Plan JSON": "Saldırı Planı (JSON)",
+        "Use Game Preset": "Oyun Önayarını Kullan", "Preset ID (Slot Number)": "Önayar Slot ID",
+        "Max Waves": "Maksimum Dalga", "1 Wave": "1 Dalga", "2 Waves": "2 Dalga", "3 Waves": "3 Dalga", "4 Waves": "4 Dalga",
+        "Attack Delay (Seconds)": "Saldırı Gecikmesi (Saniye)", "Attack Delay Randomization (Seconds)": "Gecikme Rastgeleliği (Saniye)",
+        "Attack Left Flank": "Sol Kanat Saldır", "Attack Middle": "Orta Kanat Saldır", "Attack Right Flank": "Sağ Kanat Saldır"
     }
 };
 

@@ -51,6 +51,7 @@ function App() {
     ws.onmessage = (msg) => {
       let [err, action, obj] = JSON.parse(msg.data.toString())
       if (action === ActionType.GetUsers && err === ErrorType.Success) {
+        console.log("Loaded Plugins:", obj[1]);
         const uList = obj[0].map(e => new User(e));
         setUsers(uList); setPlugins(obj[1]);
         if (uList.length > 0 && !selectedUser) setSelectedUser(uList[0]);

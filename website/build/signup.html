@@ -1,29 +1,197 @@
-<html>
-
+<!DOCTYPE html>
+<html lang="en">
 <head>
-    <script src="js/signup.js"></script>
-    <link rel="stylesheet" href="css/index.css">
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up - GGE-BOT</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #050c1a;
+            font-family: 'Inter', sans-serif;
+            color: #fff;
+        }
+        .login-card {
+            background-color: #0a1929;
+            padding: 2.5rem;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 400px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        .logo-container {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .logo-container h1 {
+            margin: 0;
+            font-size: 1.8rem;
+            background: linear-gradient(45deg, #90caf9, #42a5f5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+        }
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #90caf9;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        input {
+            width: 100%;
+            padding: 0.75rem;
+            border-radius: 6px;
+            border: 1px solid #333;
+            background-color: #000;
+            color: #fff;
+            font-size: 1rem;
+            box-sizing: border-box;
+            transition: border-color 0.2s;
+        }
+        input:focus {
+            outline: none;
+            border-color: #90caf9;
+        }
+        .btn {
+            width: 100%;
+            padding: 0.75rem;
+            border: none;
+            border-radius: 6px;
+            background-color: #90caf9;
+            color: #000;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        .btn:hover {
+            background-color: #42a5f5;
+        }
+        .btn:active {
+            transform: scale(0.98);
+        }
+        .footer {
+            margin-top: 1.5rem;
+            text-align: center;
+            font-size: 0.85rem;
+            color: #888;
+        }
+        .footer a {
+            color: #90caf9;
+            text-decoration: none;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        .msg-box {
+            padding: 0.75rem;
+            border-radius: 6px;
+            margin-bottom: 1.5rem;
+            font-size: 0.9rem;
+            display: none;
+            text-align: center;
+        }
+        .error {
+            background-color: rgba(255, 82, 82, 0.1);
+            color: #ff5252;
+            border: 1px solid rgba(255, 82, 82, 0.2);
+        }
+        .success {
+            background-color: rgba(76, 175, 80, 0.1);
+            color: #66bb6a;
+            border: 1px solid rgba(76, 175, 80, 0.2);
+        }
+    </style>
 </head>
-<div class="front-panel-anchor ">
-<div class="front-panel">
-    <div class="banner">
-        <a href="signin.html" style="text-align: left; margin:10px">Login</a>
+<body>
+
+<div class="login-card">
+    <div class="logo-container">
+        <h1>Create Account</h1>
+        <p style="color: #666; margin-top: 0.5rem;">Join GGE-BOT Platform</p>
     </div>
-    <img src="logo192.png" class="ashes-logo" alt="">
-    <form id="signup-form">
-        <div class="input-field-container">
-            <div class="login-info-banner" id="login-info-banner"></div>
-            <li><input type="text" class="input-field" id="username" placeholder="Username"></li>
-            <li><input type="password" class="input-field" id="password" placeholder="Password"></li>
-            <li><input type="password" class="input-field" id="token" placeholder="Token"></li>
-            <li><button type="submit" class="signin-signout">Signup</button></li>
+
+    <div id="msgBox" class="msg-box"></div>
+
+    <form id="signupForm">
+        <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" required placeholder="Choose a username">
         </div>
+        <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" required placeholder="your@email.com">
+        </div>
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required placeholder="Create a password">
+        </div>
+        <button type="submit" class="btn" id="signupBtn">Sign Up</button>
     </form>
-    <!-- <div class="footer">
-        <a href="privacypolicy.html">Privacy policy</a>
-    </div> -->
+
+    <div class="footer">
+        Already have an account? <a href="signin.html">Log In</a>
     </div>
 </div>
 
+<script>
+    document.getElementById('signupForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('signupBtn');
+        const msgBox = document.getElementById('msgBox');
+        
+        btn.disabled = true;
+        btn.innerText = "Creating Account...";
+        msgBox.style.display = 'none';
+        msgBox.className = 'msg-box'; // Reset classes
+
+        const username = document.getElementById('username').value;
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+
+        try {
+            const res = await fetch('/api/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, email, password })
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                msgBox.innerText = "Account created successfully! Redirecting to login...";
+                msgBox.classList.add('success');
+                msgBox.style.display = 'block';
+                setTimeout(() => {
+                    window.location.href = 'signin.html';
+                }, 2000);
+            } else {
+                msgBox.innerText = data.error || "Registration failed.";
+                msgBox.classList.add('error');
+                msgBox.style.display = 'block';
+                btn.disabled = false;
+                btn.innerText = "Sign Up";
+            }
+        } catch (err) {
+            msgBox.innerText = "Connection error. Please try again.";
+            msgBox.classList.add('error');
+            msgBox.style.display = 'block';
+            btn.disabled = false;
+            btn.innerText = "Sign Up";
+        }
+    });
+</script>
+
+</body>
 </html>
