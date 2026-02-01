@@ -23,6 +23,34 @@ if (isMainThread) {
                 key: "transferWeakTroops",
                 default: true
             },
+            {
+                type: "Checkbox",
+                label: "Smart Unit Replacement",
+                description: "If the planned unit is missing, replace with the strongest available unit of the same role.",
+                key: "smartUnitReplacement",
+                default: true
+            },
+            {
+                type: "Checkbox",
+                label: "Attack Left Flank",
+                description: "Enable attacks on left side",
+                key: "attackLeft",
+                default: true
+            },
+            {
+                type: "Checkbox",
+                label: "Attack Middle",
+                description: "Enable attacks on center",
+                key: "attackMiddle",
+                default: true
+            },
+            {
+                type: "Checkbox",
+                label: "Attack Right Flank",
+                description: "Enable attacks on right side",
+                key: "attackRight",
+                default: true
+            },
             { type: "Label", label: "Horse Settings" },
             {
                 type: "Checkbox",
@@ -44,20 +72,6 @@ if (isMainThread) {
                 description: "Use fast recruitment",
                 key: "useCoin",
                 default: false
-            },
-            {
-                type: "Checkbox",
-                label: "Smart Unit Replacement",
-                description: "If the planned unit is missing, replace with the strongest available unit of the same role.",
-                key: "smartUnitReplacement",
-                default: true
-            },
-            {
-                type: "TextArea",
-                label: "Attack Plan JSON",
-                description: "Paste the JSON from Attack Designer here.",
-                key: "customAttackPlan",
-                default: "[]"
             },
             ...presetOptions
         ]
@@ -81,7 +95,9 @@ pluginOptions.useCoin ??= false
 pluginOptions.transferWeakTroops ??= true
 pluginOptions.useTimeSkips ??= true
 pluginOptions.smartUnitReplacement ??= true
-pluginOptions.customAttackPlan ??= "[]"
+pluginOptions.attackLeft ??= true
+pluginOptions.attackMiddle ??= true
+pluginOptions.attackRight ??= true
 pluginOptions.useGamePreset ??= false
 pluginOptions.presetID ??= "0"
 pluginOptions.maxWaves ??= 3
@@ -226,9 +242,6 @@ const syncInventoryLogic = async () => {
                     category: (unitInfo.role == "melee" || unitInfo.role == "ranged") ? 'unit' : 'tool'
                 });
             });
-
-            // Send to UI immediately - Removed as per user request
-            // syncStatus({ inventory: inventoryForUI });
         }
     } catch (e) { console.error(`[${name}] Inventory Sync Error:`, e); }
 };
@@ -324,111 +337,82 @@ const startLogic = async () => {
                     }
                     console.log(`[${name}] Game Preset Applied (ID: ${pluginOptions.presetID}, Waves: ${maxWaves})`);
                 } else {
-                    // --- LEGACY / MANUAL BUILDER ---
-                    let attackPlan = [];
-                    try {
-                        attackPlan = JSON.parse(pluginOptions.customAttackPlan || "[]");
-                    } catch (e) { console.error("Invalid Attack Plan JSON"); }
+                    // --- AUTOMATIC FALLBACK ATTACK ---
+                    // Respects: attackLeft, attackMiddle, attackRight
 
-                    // Default fallback plan if empty
-                    if (!attackPlan || attackPlan.length === 0) {
-                        attackPlan = [
-                            { left: { units: [], tools: [] }, mid: { units: [], tools: [] }, right: { units: [], tools: [] } }
-                        ];
-                    }
+                    // 1. Gather Units & Tools
+                    let attackerMeleeTroops = []
+                    let attackerRangeTroops = []
+                    let attackerTools = []
 
-                    // Helper: Find exact or replacement unit
-                    const getUnitForSlot = (targetWodID, targetCount, rolePreference) => {
-                        // 1. Try exact match
-                        let invItem = sourceCastle.unitInventory.find(u => u.unitID == targetWodID);
-                        if (invItem && invItem.ammount > 0) {
-                            return { id: targetWodID, count: Math.min(targetCount, invItem.ammount), original: true };
+                    sourceCastle.unitInventory.forEach(u => {
+                        const unitInfo = units.find(obj => u.unitID == obj.wodID)
+                        if (!unitInfo || u.ammount <= 0) return;
+
+                        if (unitInfo.role == "melee")
+                            attackerMeleeTroops.push([unitInfo, u.ammount])
+                        else if (unitInfo.role == "ranged")
+                            attackerRangeTroops.push([unitInfo, u.ammount])
+                        else if (unitInfo.toolCategory) // General tool check
+                            attackerTools.push([unitInfo, u.ammount])
+                    })
+
+                    // Sort by power (Strongest first)
+                    attackerMeleeTroops.sort((a, b) => Number(b[0].meleeAttack) - Number(a[0].meleeAttack))
+                    attackerRangeTroops.sort((a, b) => Number(b[0].rangeAttack) - Number(a[0].rangeAttack))
+
+                    // Simple tool sort logic 
+                    attackerTools.sort((a, b) => b[1] - a[1])
+
+                    const commanderStats = getCommanderStats(commander)
+
+                    // 2. Fill Waves
+                    attackInfo.A.forEach((wave, waveIndex) => {
+                        const maxTroopFlank = getAmountSoldiersFlank(70) + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100
+                        const maxTroopFront = getAmountSoldiersFront(70) + (commanderStats.relicAttackUnitAmountFront ?? 0) / 100
+                        // Tools: approximate limit per slot
+                        const maxToolsFlank = getTotalAmountToolsFlank(70, 0)
+                        const maxToolsFront = getTotalAmountToolsFront(70)
+
+                        // We use a simplified filling strategy here similar to other plugins:
+                        // Fill tools first, then troops.
+
+                        // --- LEFT ---
+                        if (pluginOptions.attackLeft) {
+                            let toolsLeft = maxToolsFlank
+                            wave.L.T.forEach(slot => toolsLeft -= assignUnit(slot, attackerTools, toolsLeft))
+
+                            let troopsLeft = maxTroopFlank
+                            wave.L.U.forEach(slot => {
+                                troopsLeft -= assignUnit(slot, attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops, troopsLeft)
+                            })
                         }
 
-                        // 2. Smart Replacement
-                        if (pluginOptions.smartUnitReplacement) {
-                            let bestCandidate = null;
-                            let maxPower = -1;
+                        // --- MIDDLE ---
+                        if (pluginOptions.attackMiddle) {
+                            let toolsMid = maxToolsFront
+                            wave.M.T.forEach(slot => toolsMid -= assignUnit(slot, attackerTools, toolsMid))
 
-                            availableTroops.forEach(t => {
-                                const info = t[0];
-                                const amt = t[1];
-                                if (amt <= 0) return;
-
-                                // Check Role
-                                if (info.role !== rolePreference) return;
-
-                                const power = Math.max(Number(info.meleeAttack || 0), Number(info.rangeAttack || 0));
-                                if (power > maxPower) {
-                                    maxPower = power;
-                                    bestCandidate = { id: info.wodID, count: Math.min(targetCount, amt) };
-                                }
-                            });
-
-                            if (bestCandidate) return { ...bestCandidate, original: false };
+                            let troopsMid = maxTroopFront
+                            wave.M.U.forEach(slot => {
+                                troopsMid -= assignUnit(slot, attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops, troopsMid)
+                            })
                         }
 
-                        return null;
-                    };
+                        // --- RIGHT ---
+                        if (pluginOptions.attackRight) {
+                            let toolsRight = maxToolsFlank
+                            wave.R.T.forEach(slot => toolsRight -= assignUnit(slot, attackerTools, toolsRight))
 
-                    // Helper: Get Tool (Strict check usually preferred for tools)
-                    const getToolForSlot = (targetWodID, targetCount) => {
-                        let invItem = sourceCastle.unitInventory.find(u => u.unitID == targetWodID);
-                        if (invItem && invItem.ammount > 0) {
-                            return { id: targetWodID, count: Math.min(targetCount, invItem.ammount) };
+                            let troopsRight = maxTroopFlank
+                            wave.R.U.forEach(slot => {
+                                troopsRight -= assignUnit(slot, attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops, troopsRight)
+                            })
                         }
-                        return null;
-                    };
-
-                    // Construct Waves
-                    const flankKeys = { left: 'L', mid: 'M', right: 'R' };
-
-                    for (let w = 0; w < 4; w++) {
-                        const planWave = attackPlan[w];
-                        if (!planWave) break; // No more waves in plan
-
-                        const protocolWave = attackInfo.A[w];
-                        if (!protocolWave) continue;
-
-                        for (const [uiSide, protocolSide] of Object.entries(flankKeys)) {
-                            const sideData = planWave[uiSide];
-                            if (!sideData) continue;
-
-                            // Fill Tools
-                            if (sideData.tools) {
-                                sideData.tools.forEach((t, idx) => {
-                                    if (idx >= 10) return; // Max slots
-                                    const foundTool = getToolForSlot(t.wodID, t.count);
-                                    if (foundTool) {
-                                        protocolWave[protocolSide].T[idx] = [foundTool.id, foundTool.count];
-                                        let invRef = sourceCastle.unitInventory.find(x => x.unitID == foundTool.id);
-                                        if (invRef) invRef.ammount -= foundTool.count;
-                                    }
-                                });
-                            }
-
-                            // Fill Units
-                            if (sideData.units && sideData.units.length > 0) {
-                                const planUnit = sideData.units[0];
-                                const unitInfoDef = units.find(u => u.wodID == planUnit.wodID);
-                                const role = unitInfoDef ? unitInfoDef.role : "melee";
-
-                                const foundUnit = getUnitForSlot(planUnit.wodID, planUnit.count, role);
-
-                                if (foundUnit) {
-                                    protocolWave[protocolSide].U[0] = [foundUnit.id, foundUnit.count];
-                                    let invRef = sourceCastle.unitInventory.find(x => x.unitID == foundUnit.id);
-                                    if (invRef) invRef.ammount -= foundUnit.count;
-                                    let avRef = availableTroops.find(x => x[0].wodID == foundUnit.id);
-                                    if (avRef) avRef[1] -= foundUnit.count;
-                                }
-                            }
-                        }
-                    }
+                    });
                 }
 
                 // Validation: Check if we actually added any soldiers?
-                // If the attack is empty, return MISSING_ITEMS
                 let totalSoldiersSent = 0;
                 attackInfo.A.forEach(wave => {
                     ['L', 'M', 'R'].forEach(side => {
@@ -437,7 +421,7 @@ const startLogic = async () => {
                 });
 
                 if (totalSoldiersSent < 10) {
-                    console.warn(`[${name}] Attack plan resulted in too few troops (${totalSoldiersSent}). Check inventory or plan.`);
+                    console.warn(`[${name}] Attack plan resulted in too few troops (${totalSoldiersSent}). Check inventory or settings.`);
                     return { result: "MISSING_ITEMS" };
                 }
 
