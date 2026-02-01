@@ -7,7 +7,7 @@ const express = require('express')
 const https = require('node:https')
 const bodyParser = require('body-parser')
 const { WebSocketServer } = require("ws")
-const {parseStringPromise} = require('xml2js')
+const { parseStringPromise } = require('xml2js')
 const { Worker } = require('node:worker_threads')
 const ErrorType = require('./errors.json')
 const ActionType = require('./actions.json')
@@ -43,7 +43,7 @@ const loadGameData = async () => {
     const langRaw = await fs.readFile('./lang.json', 'utf8');
     const units = JSON.parse(unitsRaw);
     const lang = JSON.parse(langRaw);
-    
+
     units.forEach(u => {
       gameData.units[u.wodID] = u;
     });
@@ -65,13 +65,13 @@ class User {
     this.pass = obj.pass || obj.game_password_encrypted || ""
     this.server = obj.server || obj.game_server || "10"
     this.plugins = obj.plugins || {}
-    
+
     if (obj.BotConfigs) {
       this.plugins = {}
       obj.BotConfigs.forEach(config => {
-        this.plugins[config.plugin_name] = { 
-          ...(typeof config.settings === 'object' ? config.settings : {}), 
-          state: config.is_enabled 
+        this.plugins[config.plugin_name] = {
+          ...(typeof config.settings === 'object' ? config.settings : {}),
+          state: config.is_enabled
         };
       });
     }
@@ -92,7 +92,7 @@ const addUser = async (userId, user) => {
 const getSpecificUser = async (userId, user) => {
   if (isNaN(user.id)) return null;
   const row = await GameAccount.findOne({
-    where: { 
+    where: {
       id: user.id,
       UserId: userId // Sadece bu kullanıcıya ait olan hesabı getir (IDOR Koruması)
     },
@@ -104,7 +104,7 @@ const getSpecificUser = async (userId, user) => {
 const changeUser = async (userId, user) => {
   if (isNaN(user.id)) return null;
   const gameAcc = await GameAccount.findOne({
-    where: { 
+    where: {
       id: user.id,
       UserId: userId // Sadece bu kullanıcıya ait olan hesabı güncelle (IDOR Koruması)
     }
@@ -112,7 +112,7 @@ const changeUser = async (userId, user) => {
   if (!gameAcc) return null;
 
   const updateData = {
-// ... (bu kısım aynı kalacak)
+    // ... (bu kısım aynı kalacak)
     game_username: user.name,
     is_active: user.state == 1,
     game_server: user.server || '10'
@@ -151,7 +151,7 @@ const getUser = async userId => {
   // GÜVENLİK YAMASI: userId yoksa ASLA veri döndürme.
   // Eskiden: userId ? { ... } : {} yapıyordu, bu da ID yoksa herkesi getiriyordu.
   if (!userId) return [];
-  
+
   const where = { UserId: userId };
   const rows = await GameAccount.findAll({
     where,
@@ -163,7 +163,7 @@ const getUser = async userId => {
 async function start() {
   try { await fs.access('./ggeConfig.json') }
   catch { await fs.writeFile('./ggeConfig.json', ggeConfigExample); console.info(i18n.__('ggeConfigGenerated')) }
-  
+
   const ggeConfig = JSON.parse((await fs.readFile('./ggeConfig.json')).toString())
   ggeConfig.webPort ??= '3001'
 
@@ -178,7 +178,7 @@ async function start() {
     const response = await fetch('https://empire-html5.goodgamestudios.com/default/items/ItemsVersion.properties')
     const str = await response.text()
     let str2 = undefined
-    try { str2 = (await fs.readFile('./ItemsVersion.properties')).toString() } catch {}
+    try { str2 = (await fs.readFile('./ItemsVersion.properties')).toString() } catch { }
     let needItems = needLang = str != str2
     try { await fs.access('./items') } catch { needItems = true; await fs.mkdir('./items') }
     if (needItems) {
@@ -212,15 +212,18 @@ async function start() {
 
   const instances = []
   const xml = await parseStringPromise((await fs.readFile('./1.xml')).toString())
-  xml.network.instances[0].instance.forEach(e => 
+  xml.network.instances[0].instance.forEach(e =>
     instances.push({ gameURL: e.server[0], gameServer: e.zone[0], gameID: e['$'].value }))
 
   let pluginData = require('./plugins')
-  try { pluginData = pluginData.concat(require('./plugins-extra')) } catch {}
+  try { pluginData = pluginData.concat(require('./plugins-extra')) } catch { }
 
   const plugins = pluginData
     .filter(e => !e[1].hidden)
     .map(e => ({ key: path.basename(e[0]), filename: e[0], name: e[1].name, description: e[1].description, force: e[1].force, pluginOptions: e[1]?.pluginOptions }))
+
+  const filteredPlugins = plugins
+    .filter(e => e.key !== 'presets') // Hide presets helper from UI
     .sort((a, b) => (a.force ?? 0) - (b.force ?? 0))
 
   const loginCheck = async userId => {
@@ -230,18 +233,18 @@ async function start() {
 
   const app = express()
   app.use(bodyParser.urlencoded({ extended: true }))
-  
+
   const sessionMiddleware = session({
-    store: new pgSession({ 
+    store: new pgSession({
       pool: new Pool({
         user: process.env.DB_USER || 'un1c4on',
         password: process.env.DB_PASS || 'un1c4on',
         host: process.env.DB_HOST || 'localhost',
         port: process.env.DB_PORT || 5433,
         database: process.env.DB_NAME || 'ggebot_db'
-      }), 
-      tableName: 'session', 
-      createTableIfMissing: true 
+      }),
+      tableName: 'session',
+      createTableIfMissing: true
     }),
     secret: 'cok-gizli-super-guvenli-anahtar-1234',
     resave: false,
@@ -249,38 +252,38 @@ async function start() {
     cookie: { maxAge: 30 * 24 * 60 * 60 * 1000, httpOnly: true, secure: false }
   });
   app.use(sessionMiddleware)
-  
+
   // Statik dosyaları tam yol ile sun
   app.use(express.static(path.join(__dirname, 'website', 'build')))
 
   // API olmayan istekleri index.html'e yönlendir (SPA Desteği)
   // Bu satır API rotalarından SONRA gelmeli ama app.listen'dan ÖNCE olmalı.
   // Mevcut API rotaları yukarıda tanımlı olduğu için buraya ekliyoruz.
-  
+
   app.get('/lang.json', (_, res) => { res.setHeader('Access-Control-Allow-Origin', '*'); res.sendFile('lang.json', { root: '.' }) })
   app.get('/1.xml', (_, res) => { res.setHeader('Access-Control-Allow-Origin', '*'); res.sendFile('1.xml', { root: "." }) })
-  
+
   // --- YENİ API ENDPOINTLERİ ---
 
   // 1. KAYIT OL (Sadece Web Kullanıcısı)
   app.post('/api/register', bodyParser.json(), async (req, res) => {
     const { username, email, password } = req.body;
     if (!username || !email || !password) return res.status(400).json({ error: i18n.__('missingFields') });
-    
+
     try {
       const existingUser = await DBUser.findOne({ where: { email } });
       if (existingUser) return res.status(409).json({ error: i18n.__('userAlreadyExists') });
 
-      const newUser = await DBUser.create({ 
-        username, 
-        email, 
+      const newUser = await DBUser.create({
+        username,
+        email,
         password_hash: password // Prod ortamında hashlenmeli!
       });
-      
+
       // GÜVENLİK: Otomatik giriş yapma. Kullanıcıyı login sayfasına yönlendir ki abonelik kontrolü yapılabilsin.
       // req.session.userId = newUser.id;
       // req.session.save();
-      
+
       res.json({ success: true, userId: newUser.id });
     } catch (err) {
       console.error(err);
@@ -293,16 +296,16 @@ async function start() {
     const { email, password } = req.body;
     try {
       // Hem username hem email ile girişe izin ver
-      const user = await DBUser.findOne({ 
-        where: sequelize.or({ email: email }, { username: email }) 
+      const user = await DBUser.findOne({
+        where: sequelize.or({ email: email }, { username: email })
       });
 
       if (user && user.password_hash === password) {
         // --- ABONELİK KONTROLÜ ---
         if (user.role !== 'admin') { // Admin her zaman girebilir
-            if (!user.subscription_end_date || new Date(user.subscription_end_date) < new Date()) {
-                return res.status(403).json({ error: i18n.__('subscriptionExpired') || 'Abonelik süreniz dolmuş veya başlamamış.' });
-            }
+          if (!user.subscription_end_date || new Date(user.subscription_end_date) < new Date()) {
+            return res.status(403).json({ error: i18n.__('subscriptionExpired') || 'Abonelik süreniz dolmuş veya başlamamış.' });
+          }
         }
         // -------------------------
 
@@ -321,7 +324,7 @@ async function start() {
   // 3. KALE EKLE (Oyun Hesabı Bağla)
   app.post('/api/add-castle', bodyParser.json(), async (req, res) => {
     if (!req.session.userId) return res.status(401).json({ error: 'Unauthorized' });
-    
+
     const { server, game_username, game_password } = req.body;
     if (!server || !game_username || !game_password) return res.status(400).json({ error: 'Missing fields' });
 
@@ -346,11 +349,11 @@ async function start() {
         name: game_username,
         pass: game_password
       });
-      
+
       // WebSocket ile frontend'i güncelle
       const wsClient = loggedInUsers[req.session.userId]?.[0]?.ws;
       if (wsClient) {
-        wsClient.send(JSON.stringify([ErrorType.Success, ActionType.GetUsers, [await getUser(req.session.userId), plugins]]));
+        wsClient.send(JSON.stringify([ErrorType.Success, ActionType.GetUsers, [await getUser(req.session.userId), filteredPlugins]]));
       }
 
       res.json({ success: true });
@@ -364,7 +367,7 @@ async function start() {
   app.post('/api', bodyParser.json(), async (req, res) => {
     let json = req.body
     res.setHeader('Content-Type', 'application/json')
-    
+
     // Login (id: 0)
     if (json.id == 0) {
       const row = await DBUser.findOne({ where: { username: json.email_name } })
@@ -417,28 +420,27 @@ async function start() {
         case ActionType.KillBot:
           await GameAccount.update({ is_active: false }, { where: { id: user.id } })
           removeBot(user.id)
-          loggedInUsers[userId]?.forEach(async ({ws}) => ws.send(JSON.stringify([ErrorType.Success, ActionType.GetUsers, [await getUser(userId), plugins]])))
+          loggedInUsers[userId]?.forEach(async ({ ws }) => ws.send(JSON.stringify([ErrorType.Success, ActionType.GetUsers, [await getUser(userId), filteredPlugins]])))
           break
         case ActionType.GetLogs:
           worker.messageBuffer[worker.messageBufferCount] = obj[1]
           worker.messageBufferCount = (worker.messageBufferCount + 1) % 25
           loggedInUsers[userId]?.forEach(o => o.viewedUser == user.id ? o.ws.send(JSON.stringify([ErrorType.Success, ActionType.GetLogs, [worker.messageBuffer, worker.messageBufferCount]])) : undefined)
           break
-                                                case ActionType.StatusUser:
-                                                  // Bot verisi bazen [Action, Data] bazen direkt Data gelebilir
-                                                  const statusRaw = Array.isArray(obj) ? obj[1] : obj;
-                                                  
-                                                  if (statusRaw && statusRaw.inventory) {
-                                                      // Enriched inventory calculation removed
-                                                      // ID'yi her zaman botun veritabanı ID'si ile sabitle
-                                                      statusRaw.id = user.id;
-                                                      
-                                                      loggedInUsers[userId]?.forEach(o =>
-                                                          o.ws.send(JSON.stringify([ErrorType.Success, ActionType.StatusUser, statusRaw])))
-                                                  }
-                                                  break
-                                        
-                                                        case ActionType.RemoveUser:
+        case ActionType.StatusUser:
+          // Bot verisi bazen [Action, Data] bazen direkt Data gelebilir
+          const statusRaw = Array.isArray(obj) ? obj[1] : obj;
+
+          if (statusRaw) {
+            // ID'yi her zaman botun veritabanı ID'si ile sabitle
+            statusRaw.id = user.id;
+
+            loggedInUsers[userId]?.forEach(o =>
+              o.ws.send(JSON.stringify([ErrorType.Success, ActionType.StatusUser, statusRaw])))
+          }
+          break
+
+        case ActionType.RemoveUser:
           worker.off('exit', onTerminate); await removeUser(userId, user)
           break
         case ActionType.SetUser:
@@ -463,25 +465,25 @@ async function start() {
   const allGameAccounts = await GameAccount.findAll({ include: [BotConfig, DBUser] });
   const allUsers = allGameAccounts.map(e => new User(e.get({ plain: true })));
 
-  for (const u of allUsers) { 
+  for (const u of allUsers) {
     // --- ABONELİK KONTROLÜ (BOT BAŞLATMA) ---
     // User nesnesine DBUser dahil edildiği için u.User üzerinden erişebiliriz (GameAccount -> User ilişkisi)
     // Ancak getUser fonksiyonu GameAccount döndürüyor ve include edilen User verisi 'User' fieldında olabilir.
     // getUser fonksiyonunu kontrol ettik, DBUser'ı include ediyor ama User sınıfına çevirirken bunu kaybetmemeli.
     // User sınıfı şu an sadece basit alanları alıyor. Bu kontrolü veritabanından taze veriyle yapmak daha güvenli.
-    
+
     try {
-        const dbUser = await DBUser.findByPk(u.UserId);
-        if (dbUser && dbUser.role !== 'admin') {
-             if (!dbUser.subscription_end_date || new Date(dbUser.subscription_end_date) < new Date()) {
-                 console.log(`[Skipped] User ${dbUser.username} subscription expired.`);
-                 continue;
-             }
+      const dbUser = await DBUser.findByPk(u.UserId);
+      if (dbUser && dbUser.role !== 'admin') {
+        if (!dbUser.subscription_end_date || new Date(dbUser.subscription_end_date) < new Date()) {
+          console.log(`[Skipped] User ${dbUser.username} subscription expired.`);
+          continue;
         }
+      }
     } catch (e) { console.error("Sub check error:", e); }
     // ----------------------------------------
 
-    if (u.state != 0) createBot(u.UserId, u) 
+    if (u.state != 0) createBot(u.UserId, u)
   }
 
   // SPA Fallback: API olmayan tüm istekleri index.html'e yönlendir
@@ -489,8 +491,8 @@ async function start() {
     // API isteklerini engelleme
     if (req.path.startsWith('/api')) return res.status(404).json({ error: 'Not Found' });
     // Uzantılı dosyalar (resim, css vb.) bulunamadıysa 404 dön, index.html değil
-    if (req.path.includes('.') && !req.path.endsWith('.html')) return res.status(404).send('Not Found'); 
-    
+    if (req.path.includes('.') && !req.path.endsWith('.html')) return res.status(404).send('Not Found');
+
     res.sendFile(path.join(__dirname, 'website', 'build', 'index.html'));
   });
 
@@ -510,14 +512,14 @@ async function start() {
 
   wss.addListener('connection', async (ws, req) => {
     let userId = req.session?.userId || req.headers.cookie?.split('; ').find(e => e.startsWith('uuid='))?.substring(5, Infinity)
-    
+
     const refreshUsers = async () => {
-        if (!userId || isNaN(userId)) return;
-        ws.send(JSON.stringify([ErrorType.Success, ActionType.GetUsers, [await getUser(userId), plugins]]))
+      if (!userId || isNaN(userId)) return;
+      ws.send(JSON.stringify([ErrorType.Success, ActionType.GetUsers, [await getUser(userId), filteredPlugins]]))
     }
 
     if (!userId || isNaN(userId) || !(await loginCheck(userId))) return ws.send(JSON.stringify([ErrorType.Unauthenticated, ActionType.GetUUID, {}]))
-    
+
     loggedInUsers[userId] ??= []; loggedInUsers[userId].push({ ws })
     await refreshUsers()
 
@@ -532,36 +534,36 @@ async function start() {
         case ActionType.SetUser:
           const activePluginCount = Object.keys(obj.plugins || {}).length;
           console.debug(`[${obj.name}] Received SetUser. Plugin Count: ${activePluginCount}, State: ${obj.state}`);
-          
+
           let oldU = await getSpecificUser(userId, new User(obj))
           let newU = await changeUser(userId, new User(obj))
-          
+
           if (!newU) {
-             console.error(`[${obj.name}] User update failed.`);
-             return;
+            console.error(`[${obj.name}] User update failed.`);
+            return;
           }
-          
+
           console.debug(`[${newU.name}] Update success. New State: ${newU.state}`);
 
-          if (newU.state == 0) { 
-            try { 
-                console.log(`[${newU.name}] Stopping bot...`);
-                removeBot(newU.id) 
-            } catch (e) { console.error(e); } 
+          if (newU.state == 0) {
+            try {
+              console.log(`[${newU.name}] Stopping bot...`);
+              removeBot(newU.id)
+            } catch (e) { console.error(e); }
           }
           else {
             let w = botMap.get(newU.id)
             if (!w) {
-                console.log(`[${newU.name}] Starting new bot instance...`);
-                await createBot(userId, newU)
+              console.log(`[${newU.name}] Starting new bot instance...`);
+              await createBot(userId, newU)
             }
             else {
               console.log(`[${newU.name}] Bot already running. Checking for restart...`);
               let restarted = false
               for (const [k, v] of Object.entries(oldU.plugins)) {
-                if (newU.plugins[k].state != v.state) { 
-                    console.log(`[${newU.name}] Plugin ${k} state changed. Restarting bot...`);
-                    restarted = true; removeBot(newU.id); await createBot(userId, newU, w.messageBuffer, w.messageBufferCount); break 
+                if (newU.plugins[k].state != v.state) {
+                  console.log(`[${newU.name}] Plugin ${k} state changed. Restarting bot...`);
+                  restarted = true; removeBot(newU.id); await createBot(userId, newU, w.messageBuffer, w.messageBufferCount); break
                 }
               }
               if (!restarted) {
@@ -573,7 +575,7 @@ async function start() {
               }
             }
           }
-          loggedInUsers[userId]?.forEach(async ({ ws }) => ws.send(JSON.stringify([ErrorType.Success, ActionType.GetUsers, [await getUser(userId), plugins]])))
+          loggedInUsers[userId]?.forEach(async ({ ws }) => ws.send(JSON.stringify([ErrorType.Success, ActionType.GetUsers, [await getUser(userId), filteredPlugins]])))
           break
         case ActionType.GetLogs:
           if (!obj) { loggedInUsers[userId].find(o => o.ws == ws).viewedUser = undefined; break }

@@ -1,10 +1,11 @@
 import * as React from 'react'
-import { 
-    Checkbox, TextField, Paper, FormControlLabel, 
-    Select, MenuItem, FormControl, InputLabel, Box, Typography, 
+import {
+    Checkbox, TextField, Paper, FormControlLabel,
+    Select, MenuItem, FormControl, InputLabel, Box, Typography,
     CircularProgress, Divider, Fab, Zoom, Button, Backdrop
 } from '@mui/material'
 import SaveIcon from '@mui/icons-material/Save'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 
 import { ErrorType, ActionType } from "../types.js"
 import PluginsTable from './pluginsTable'
@@ -21,16 +22,19 @@ export default function UserSettings(props) {
     const [instances, setInstances] = React.useState([]);
     const [langData, setLangData] = React.useState({});
     const [openDesigner, setOpenDesigner] = React.useState(false);
-    
+
     // Form states
     const [name, setName] = React.useState(props.selectedUser.name ?? "");
-// ... (fetchData aynı kalacak)
     const [pass, setPass] = React.useState("");
     const [plugins, setPlugins] = React.useState(props.selectedUser.plugins || {});
     const [server, setServer] = React.useState(props.selectedUser.server || "");
     const [externalEvent, setExternalEvent] = React.useState(props.selectedUser.externalEvent);
 
     const isNewUser = !props.selectedUser.id;
+
+    // Smart Save State
+    const [hasChanges, setHasChanges] = React.useState(false);
+    const [justSaved, setJustSaved] = React.useState(false);
 
     React.useEffect(() => {
         const fetchData = async () => {
@@ -71,7 +75,17 @@ export default function UserSettings(props) {
         let obj = { id: props.selectedUser.id, name, pass, server, plugins: activePlugins, externalEvent };
         if (!isNewUser && pass === "") obj.pass = props.selectedUser.pass;
         props.ws.send(JSON.stringify([ErrorType.Success, isNewUser ? ActionType.AddUser : ActionType.SetUser, obj]));
+
+        // Visual feedback
+        setHasChanges(false);
+        setJustSaved(true);
+        setTimeout(() => setJustSaved(false), 2000);
     };
+
+    // Track changes
+    React.useEffect(() => {
+        setHasChanges(true);
+    }, [plugins, name, pass, server, externalEvent]);
 
     if (loading) return (
         <Box sx={{ p: 5, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -103,17 +117,17 @@ export default function UserSettings(props) {
                 </Box>
             ) : (
                 <Box>
-                    {props.plugins.filter(p => p.key === activeTab).map(plugin => (
+                    {props.plugins.filter(p => p.key === activeTab && p.key !== 'presets').map(plugin => (
                         <Box key={plugin.key}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 4 }}>
                                 <Box>
                                     <Typography variant="h4" sx={{ fontWeight: 'bold' }}>{t(plugin.name)}</Typography>
                                     <Typography color="gray" variant="body1">{t(plugin.description)}</Typography>
                                 </Box>
-                                <FormControlLabel 
+                                <FormControlLabel
                                     control={
-                                        <Checkbox 
-                                            checked={plugins[plugin.key]?.state || false} 
+                                        <Checkbox
+                                            checked={plugins[plugin.key]?.state || false}
                                             onChange={e => {
                                                 const np = { ...plugins };
                                                 np[plugin.key] = { ...np[plugin.key], state: e.target.checked };
@@ -122,51 +136,51 @@ export default function UserSettings(props) {
                                             color="success"
                                             sx={{ '& .MuiSvgIcon-root': { fontSize: 40 } }}
                                         />
-                                    } 
-                                    label={plugins[plugin.key]?.state ? t("ENABLED") : t("DISABLED")} 
-                                    sx={{ 
+                                    }
+                                    label={plugins[plugin.key]?.state ? t("ENABLED") : t("DISABLED")}
+                                    sx={{
                                         bgcolor: plugins[plugin.key]?.state ? 'rgba(76, 175, 80, 0.1)' : 'rgba(255,255,255,0.05)',
                                         px: 3, py: 1.5, borderRadius: 3, border: '1px solid',
                                         borderColor: plugins[plugin.key]?.state ? '#4caf50' : '#333'
                                     }}
                                 />
                             </Box>
-                                    <Divider sx={{ mb: 4, opacity: 0.1 }} />
-                                    
-                                    {/* SALDIRI TASARIM BUTONU (Sadece Berimond için şimdilik) */}
-                                    {plugin.key === 'berikingdom' && (
-                                        <Box sx={{ mb: 3 }}>
-                                            <Button 
-                                                variant="contained" 
-                                                color="warning" 
-                                                startIcon={<DoubleArrowIcon />}
-                                                onClick={() => setOpenDesigner(true)}
-                                                sx={{ mb: 2 }}
-                                            >
-                                                {t("Saldırı Tasarla")}
-                                            </Button>
-                                            
-                                            <Backdrop 
-                                                open={openDesigner} 
-                                                sx={{ zIndex: 9999 }}
-                                            >
-                                                <AttackDesigner 
-                                                    inventory={props.userStatus?.enrichedInventory}
-                                                    onClose={() => setOpenDesigner(false)}
-                                                    onSave={(plan) => {
-                                                        const np = { ...plugins };
-                                                        np[plugin.key] = { ...np[plugin.key], attackPlan: plan };
-                                                        setPlugins(np);
-                                                        setOpenDesigner(false);
-                                                    }}
-                                                    t={t}
-                                                />
-                                            </Backdrop>
-                                        </Box>
-                                    )}
+                            <Divider sx={{ mb: 4, opacity: 0.1 }} />
 
-                                    {/* Plugin Specific Settings */}
-                                    <Box sx={{ bgcolor: 'rgba(255,255,255,0.02)', p: 4, borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
+                            {/* SALDIRI TASARIM BUTONU (Sadece Berimond için şimdilik) */}
+                            {plugin.key === 'berikingdom' && (
+                                <Box sx={{ mb: 3 }}>
+                                    <Button
+                                        variant="contained"
+                                        color="warning"
+                                        startIcon={<DoubleArrowIcon />}
+                                        onClick={() => setOpenDesigner(true)}
+                                        sx={{ mb: 2 }}
+                                    >
+                                        {t("Saldırı Tasarla")}
+                                    </Button>
+
+                                    <Backdrop
+                                        open={openDesigner}
+                                        sx={{ zIndex: 9999 }}
+                                    >
+                                        <AttackDesigner
+                                            inventory={props.userStatus?.enrichedInventory}
+                                            onClose={() => setOpenDesigner(false)}
+                                            onSave={(plan) => {
+                                                const np = { ...plugins };
+                                                np[plugin.key] = { ...np[plugin.key], attackPlan: plan };
+                                                setPlugins(np);
+                                                setOpenDesigner(false);
+                                            }}
+                                            t={t}
+                                        />
+                                    </Backdrop>
+                                </Box>
+                            )}
+
+                            {/* Plugin Specific Settings */}
+                            <Box sx={{ bgcolor: 'rgba(255,255,255,0.02)', p: 4, borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
                                 <PluginsTable singlePlugin={plugin} plugins={[plugin]} userPlugins={plugins} onChange={e => setPlugins(e)} language={language} />
                             </Box>
                         </Box>
@@ -174,28 +188,37 @@ export default function UserSettings(props) {
                 </Box>
             )}
 
-            {/* STICKY SAVE BUTTON */}
+            {/* SMART SAVE BUTTON - Only in Settings */}
             <Zoom in={true}>
-                <Fab 
-                    color="primary" 
+                <Fab
+                    color={justSaved ? "success" : hasChanges ? "warning" : "primary"}
                     variant="extended"
                     onClick={handleSave}
-                    sx={{ 
-                        position: 'fixed', 
-                        bottom: 40, 
-                        right: 40, 
+                    disabled={!hasChanges && !justSaved}
+                    sx={{
+                        position: 'fixed',
+                        bottom: 40,
+                        right: 40,
                         px: 4,
                         boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-                        background: 'linear-gradient(45deg, #2196f3 30%, #21cbf3 90%)',
+                        background: justSaved
+                            ? 'linear-gradient(45deg, #4caf50 30%, #66bb6a 90%)'
+                            : hasChanges
+                                ? 'linear-gradient(45deg, #ff9800 30%, #ffa726 90%)'
+                                : 'linear-gradient(45deg, #2196f3 30%, #21cbf3 90%)',
                         color: 'white',
                         '&:hover': {
-                            transform: 'translateY(-2px)',
-                            boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+                            transform: hasChanges ? 'translateY(-2px)' : 'none',
+                            boxShadow: hasChanges ? '0 12px 40px rgba(0,0,0,0.6)' : '0 8px 32px rgba(0,0,0,0.5)',
+                        },
+                        '&.Mui-disabled': {
+                            background: 'linear-gradient(45deg, #424242 30%, #616161 90%)',
+                            color: 'rgba(255,255,255,0.5)'
                         }
                     }}
                 >
-                    <SaveIcon sx={{ mr: 1 }} />
-                    {t("Save Changes")}
+                    {justSaved ? <CheckCircleIcon sx={{ mr: 1 }} /> : <SaveIcon sx={{ mr: 1 }} />}
+                    {justSaved ? t("Saved!") : hasChanges ? t("Save Changes") : t("No Changes")}
                 </Fab>
             </Zoom>
         </Box>

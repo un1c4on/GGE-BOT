@@ -1,8 +1,8 @@
 import * as React from 'react'
-import { 
-    Table, TableBody, TableCell, TableContainer, TableHead, TableRow, 
-    Paper, Checkbox, Select, Box, MenuItem, 
-    FormControl, InputLabel, TextField, FormControlLabel, Slider, Typography, Grid 
+import {
+    Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
+    Paper, Checkbox, Select, Box, MenuItem,
+    FormControl, InputLabel, TextField, FormControlLabel, Slider, Typography, Grid
 } from '@mui/material'
 import { getTranslation } from '../translations.js'
 
@@ -12,14 +12,14 @@ const array_chunks = (array, chunk_size) => Array(Math.ceil(array.length / chunk
 // Component moved OUTSIDE to prevent remounting issues
 const PluginOption = ({ pluginData, parentKey, userPlugins, onChange, t }) => {
     // Ensure nested object exists
-    if(!userPlugins[parentKey]) userPlugins[parentKey] = {};
-    if(userPlugins[parentKey][pluginData.key] === undefined) userPlugins[parentKey][pluginData.key] = pluginData.default;
+    if (!userPlugins[parentKey]) userPlugins[parentKey] = {};
+    if (userPlugins[parentKey][pluginData.key] === undefined) userPlugins[parentKey][pluginData.key] = pluginData.default;
 
     // Use local state for inputs to allow typing without immediate re-render lag
     // However, since we fixed the component definition, standard controlled input should work fine.
     // If props update from parent, we want to reflect that.
     const currentValue = userPlugins[parentKey][pluginData.key];
-    
+
     const handleChange = (newValue) => {
         // Mutate the object directly (as per original logic logic was weird but we keep the structure)
         // Ideally we should copy, but the parent 'onChange' expects the whole object
@@ -33,7 +33,7 @@ const PluginOption = ({ pluginData, parentKey, userPlugins, onChange, t }) => {
         case "Text":
             return <TextField fullWidth label={t(pluginData.label)} variant="outlined" size="small" value={currentValue || ""} onChange={(e) => handleChange(e.target.value)} sx={{ my: 1 }} />
         case "TextArea": // Added support for TextArea
-             return <TextField fullWidth multiline rows={4} label={t(pluginData.label)} variant="outlined" size="small" value={currentValue || ""} onChange={(e) => handleChange(e.target.value)} sx={{ my: 1, '& .MuiInputBase-root': { fontSize: '0.8rem', fontFamily: 'monospace' } }} />
+            return <TextField fullWidth multiline rows={4} label={t(pluginData.label)} variant="outlined" size="small" value={currentValue || ""} onChange={(e) => handleChange(e.target.value)} sx={{ my: 1, '& .MuiInputBase-root': { fontSize: '0.8rem', fontFamily: 'monospace' } }} />
         case "Checkbox":
             return <FormControlLabel control={<Checkbox size="small" checked={!!currentValue} onChange={(_, nv) => handleChange(nv)} />} label={<Typography variant="body2">{t(pluginData.label)}</Typography>} sx={{ my: 0.5 }} />
         case "Select":
@@ -76,7 +76,7 @@ export default function PluginsTable(props) {
     const t = (key) => getTranslation(language, key);
 
     const userPlugins = props.userPlugins ?? {}
-    
+
     // Single plugin view (Sidebar'dan seçilen)
     if (singlePlugin) {
         return (
@@ -84,10 +84,10 @@ export default function PluginsTable(props) {
                 <Grid container spacing={2}>
                     {singlePlugin.pluginOptions?.map((opt) => (
                         <Grid item xs={opt.type === 'Table' || opt.type === 'Label' || opt.type === 'TextArea' ? 12 : 6} key={opt.key}>
-                            <PluginOption 
-                                pluginData={opt} 
-                                parentKey={singlePlugin.key} 
-                                userPlugins={userPlugins} 
+                            <PluginOption
+                                pluginData={opt}
+                                parentKey={singlePlugin.key}
+                                userPlugins={userPlugins}
                                 onChange={props.onChange}
                                 t={t}
                             />
@@ -107,7 +107,7 @@ export default function PluginsTable(props) {
                     <TableCell sx={{ color: '#90caf9' }}>{t("Description")}</TableCell>
                 </TableRow></TableHead>
                 <TableBody>
-                    {props.plugins.map(p => (
+                    {props.plugins.filter(p => p.key !== 'presets').map(p => (
                         <TableRow key={p.key}>
                             <TableCell sx={{ fontWeight: 'bold' }}>{t(p.name)}</TableCell>
                             <TableCell sx={{ fontSize: '0.8rem' }}>{t(p.description)}</TableCell>

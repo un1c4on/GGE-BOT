@@ -1,10 +1,10 @@
 import './App.css'
 import * as React from 'react'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
-import { 
-    Box, Drawer, AppBar, Toolbar, List, Typography, Divider, 
-    ListItem, ListItemButton, ListItemIcon, ListItemText, CssBaseline,
-    Avatar, Chip, Collapse, IconButton, Menu, MenuItem, Checkbox, Button
+import {
+  Box, Drawer, AppBar, Toolbar, List, Typography, Divider,
+  ListItem, ListItemButton, ListItemIcon, ListItemText, CssBaseline,
+  Avatar, Chip, Collapse, IconButton, Menu, MenuItem, Checkbox
 } from '@mui/material'
 import DashboardIcon from '@mui/icons-material/Dashboard'
 import SettingsIcon from '@mui/icons-material/Settings'
@@ -47,7 +47,7 @@ function App() {
   const t = (key) => getTranslation(language, key);
 
   let ws = React.useMemo(() => {
-    const ws = new ReconnectingWebSocket(`${window.location.protocol === 'https:' ? "wss" : "ws"}://${window.location.hostname}:${window.location.port}`,[], {WebSocket: WebSocket, minReconnectionDelay: 3000 })
+    const ws = new ReconnectingWebSocket(`${window.location.protocol === 'https:' ? "wss" : "ws"}://${window.location.hostname}:${window.location.port}`, [], { WebSocket: WebSocket, minReconnectionDelay: 3000 })
     ws.onmessage = (msg) => {
       let [err, action, obj] = JSON.parse(msg.data.toString())
       if (action === ActionType.GetUsers && err === ErrorType.Success) {
@@ -73,28 +73,25 @@ function App() {
   };
 
   const togglePluginFromSidebar = (e, pluginKey) => {
-      e.stopPropagation();
-      if (!selectedUser) return;
-      
-      const updatedUser = { ...selectedUser };
-      updatedUser.plugins = JSON.parse(JSON.stringify(updatedUser.plugins || {}));
-      
-      const currentState = updatedUser.plugins[pluginKey]?.state || false;
-      
-      if (!updatedUser.plugins[pluginKey]) updatedUser.plugins[pluginKey] = {};
-      updatedUser.plugins[pluginKey].state = !currentState;
-      
-      // Update Selected User State
-      setSelectedUser(updatedUser);
-      
-      // Update Users List State (for Dashboard reflection)
-      setUsers(prevUsers => prevUsers.map(u => u.id === updatedUser.id ? updatedUser : u));
-  };
+    e.stopPropagation();
+    if (!selectedUser) return;
 
-  const handleSidebarSave = () => {
-      if (!selectedUser) return;
-      ws.send(JSON.stringify([ErrorType.Success, ActionType.SetUser, selectedUser]));
-      // Optional: Show success feedback
+    const updatedUser = { ...selectedUser };
+    updatedUser.plugins = JSON.parse(JSON.stringify(updatedUser.plugins || {}));
+
+    const currentState = updatedUser.plugins[pluginKey]?.state || false;
+
+    if (!updatedUser.plugins[pluginKey]) updatedUser.plugins[pluginKey] = {};
+    updatedUser.plugins[pluginKey].state = !currentState;
+
+    // Update Selected User State
+    setSelectedUser(updatedUser);
+
+    // Update Users List State (for Dashboard reflection)
+    setUsers(prevUsers => prevUsers.map(u => u.id === updatedUser.id ? updatedUser : u));
+
+    // Auto-save: Immediately send to server
+    ws.send(JSON.stringify([ErrorType.Success, ActionType.SetUser, updatedUser]));
   };
 
   return (
@@ -105,7 +102,7 @@ function App() {
           <Toolbar>
             <SmartToyIcon sx={{ mr: 2, color: '#90caf9' }} />
             <Typography variant="h6" noWrap sx={{ flexGrow: 1, fontWeight: 'bold', letterSpacing: 1 }}>GGE-BOT SAAS</Typography>
-            
+
             {/* DİL SEÇİCİ */}
             <IconButton onClick={handleLangMenu} sx={{ mr: 2, color: '#90caf9' }}>
               <LanguageIcon />
@@ -149,22 +146,22 @@ function App() {
                         <ListItemIcon><AccountCircleIcon sx={{ fontSize: 20 }} /></ListItemIcon>
                         <ListItemText primary={t("Account Details")} primaryTypographyProps={{ fontSize: '0.85rem' }} />
                       </ListItemButton>
-                      
+
                       <Divider sx={{ my: 1, mx: 2, opacity: 0.1 }} />
                       <Typography variant="caption" sx={{ px: 2, color: 'gray', fontWeight: 'bold' }}>{t("ACTIVE PLUGINS")}</Typography>
-                      
-                      {plugins.map((plugin) => (
-                        <ListItemButton 
-                            key={plugin.key} 
-                            selected={activeView === 'settings' && settingsTab === plugin.key} 
-                            onClick={() => { setActiveView('settings'); setSettingsTab(plugin.key); }} 
-                            sx={{ borderRadius: '10px 0 0 10px', borderLeft: selectedUser?.plugins[plugin.key]?.state ? '3px solid #4caf50' : '3px solid transparent' }}
+
+                      {plugins.filter(p => p.key !== 'presets').map((plugin) => (
+                        <ListItemButton
+                          key={plugin.key}
+                          selected={activeView === 'settings' && settingsTab === plugin.key}
+                          onClick={() => { setActiveView('settings'); setSettingsTab(plugin.key); }}
+                          sx={{ borderRadius: '10px 0 0 10px', borderLeft: selectedUser?.plugins[plugin.key]?.state ? '3px solid #4caf50' : '3px solid transparent' }}
                         >
-                          <Checkbox 
-                             size="small" 
-                             checked={selectedUser?.plugins[plugin.key]?.state || false} 
-                             onClick={(e) => togglePluginFromSidebar(e, plugin.key)}
-                             sx={{ p: 0.5, mr: 1, color: '#666', '&.Mui-checked': { color: '#4caf50' } }}
+                          <Checkbox
+                            size="small"
+                            checked={selectedUser?.plugins[plugin.key]?.state || false}
+                            onClick={(e) => togglePluginFromSidebar(e, plugin.key)}
+                            sx={{ p: 0.5, mr: 1, color: '#666', '&.Mui-checked': { color: '#4caf50' } }}
                           />
                           <ListItemIcon sx={{ minWidth: 30 }}><ExtensionIcon sx={{ fontSize: 18, color: selectedUser?.plugins[plugin.key]?.state ? '#4caf50' : 'inherit' }} /></ListItemIcon>
                           <ListItemText primary={t(plugin.name)} primaryTypographyProps={{ fontSize: '0.8rem' }} />
@@ -174,57 +171,42 @@ function App() {
                   </Collapse>
                 </>
               )}
-                        </List>
+            </List>
           </Box>
-            
-          {/* SIDEBAR FOOTER ACTION */}
-          {selectedUser && (
-              <Box sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.05)', bgcolor: 'rgba(0,0,0,0.2)' }}>
-                  <Button 
-                      fullWidth 
-                      variant="contained" 
-                      color="primary" 
-                      onClick={handleSidebarSave}
-                      sx={{ fontWeight: 'bold' }}
-                  >
-                      {t("Save Changes")}
-                  </Button>
-              </Box>
-          )}
 
           <Box sx={{ px: 1, pb: 2 }}>
             <Divider sx={{ mb: 1, opacity: 0.1 }} />
             <ListItem disablePadding>
-              <ListItemButton 
-                onClick={() => window.location.href = "signin.html"} 
-                sx={{ 
-                    borderRadius: 2,
-                    '&:hover': { bgcolor: 'rgba(211, 47, 47, 0.1)' }
+              <ListItemButton
+                onClick={() => window.location.href = "signin.html"}
+                sx={{
+                  borderRadius: 2,
+                  '&:hover': { bgcolor: 'rgba(211, 47, 47, 0.1)' }
                 }}
               >
                 <ListItemIcon><LogoutIcon sx={{ color: '#ff5252' }} /></ListItemIcon>
-                <ListItemText 
-                    primary={t("Logout")} 
-                    primaryTypographyProps={{ sx: { color: '#ff5252', fontWeight: 'bold' } }} 
+                <ListItemText
+                  primary={t("Logout")}
+                  primaryTypographyProps={{ sx: { color: '#ff5252', fontWeight: 'bold' } }}
                 />
               </ListItemButton>
             </ListItem>
           </Box>
         </Drawer>
-            
+
 
         <Box component="main" sx={{ flexGrow: 1, p: 4, minHeight: '100vh', bgcolor: '#050c1a' }}>
           <Toolbar />
           {activeView === 'dashboard' ? (
             <GGEUserTable ws={ws} plugins={plugins} rows={users} usersStatus={usersStatus} language={language} onSelectUser={handleBotSelect} />
           ) : (
-            <UserSettings 
-                ws={ws} 
-                selectedUser={selectedUser} 
-                userStatus={usersStatus[selectedUser?.id]} // Canlı statü (Envanter burada)
-                plugins={plugins} 
-                language={language} 
-                activeTab={settingsTab} 
+            <UserSettings
+              ws={ws}
+              selectedUser={selectedUser}
+              userStatus={usersStatus[selectedUser?.id]} // Canlı statü (Envanter burada)
+              plugins={plugins}
+              language={language}
+              activeTab={settingsTab}
             />
           )}
         </Box>

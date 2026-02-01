@@ -4,7 +4,7 @@ const EventEmitter = require('node:events')
 const WebSocket = require('ws')
 const ActionType = require('./actions.json')
 const err = require('./err.json')
-const {DatabaseSync} = require('node:sqlite')
+const { DatabaseSync } = require('node:sqlite')
 const events = new EventEmitter()
 const ggeConfig = require("./ggeConfig.json")
 if (isMainThread)
@@ -13,12 +13,12 @@ const botConfig = workerData
 
 const _console = console
 
-function mngLog(msg,logLevel) {
+function mngLog(msg, logLevel) {
     // Ensure msg is a string
     if (typeof msg !== 'string') {
         try { msg = JSON.stringify(msg); } catch { msg = String(msg); }
     }
-    
+
     // Use process.stdout.write to avoid recursion with overridden console.log
     process.stdout.write(`[${botConfig.name}] ${msg}\n`);
 
@@ -30,11 +30,11 @@ function mngLog(msg,logLevel) {
     const now = new Date()
     let hours = now.getHours()
     let minutes = now.getMinutes()
-    
+
     hours = hours < 10 ? '0' + hours : hours
     minutes = minutes < 10 ? '0' + minutes : minutes
-    
-    parentPort.postMessage([ActionType.GetLogs,[logLevel, `[${hours + ':' + minutes}] ` + msg]])
+
+    parentPort.postMessage([ActionType.GetLogs, [logLevel, `[${hours + ':' + minutes}] ` + msg]])
 }
 if (!botConfig.internalWorker) {
     // Override console methods to capture logs
@@ -65,7 +65,7 @@ const rawProtocolSeparator = "%"
 const xtHandler = new EventEmitter()
 
 function sendXT(cmdName, paramObj) {
-    webSocket.send(rawProtocolSeparator + ["xt",  botConfig.gameServer, cmdName, 1].join(rawProtocolSeparator) + rawProtocolSeparator + paramObj + rawProtocolSeparator)
+    webSocket.send(rawProtocolSeparator + ["xt", botConfig.gameServer, cmdName, 1].join(rawProtocolSeparator) + rawProtocolSeparator + paramObj + rawProtocolSeparator)
 }
 
 /**
@@ -78,7 +78,7 @@ function sendXT(cmdName, paramObj) {
 
 let lordErrors = 0
 const waitForResult = (key, timeout, func) => new Promise((resolve, reject) => {
-    if (timeout == undefined) 
+    if (timeout == undefined)
         reject(`waitForResult: No timeout specified`)
 
     func ??= _ => true
@@ -88,7 +88,7 @@ const waitForResult = (key, timeout, func) => new Promise((resolve, reject) => {
     const checkForLordIssues = () => {
         if (err[result] == "LORD_IS_USED")
             lordErrors++
-        if(err[result] == "MOVEMENT_HAS_NO_UNITS") {
+        if (err[result] == "MOVEMENT_HAS_NO_UNITS") {
             console.error("Closing in 10 seconds due to MOVEMENT_HAS_NO_UNITS error!")
             setTimeout(() => {
                 parentPort.postMessage([ActionType.KillBot])
@@ -103,11 +103,11 @@ const waitForResult = (key, timeout, func) => new Promise((resolve, reject) => {
         }
     }
 
-    if(timeout > 0) {
+    if (timeout > 0) {
         timer = setTimeout(() => {
             xtHandler.removeListener(key, helperFunction)
             const msg = (result == undefined || result == 0) ? "TIMED_OUT" : !err[result] ? result : err[result]
-            
+
             console.warn(`${key} Timed out`)
 
             reject(msg)
@@ -133,20 +133,20 @@ const webSocket = new WebSocket(`wss://${botConfig.gameURL}/`);
 webSocket.onopen = _ => webSocket.send('<msg t="sys"><body action="verChk" r="0"><ver v="166"/></body></msg>')
 
 const playerInfo = {
-    level : NaN,
-    userID : NaN,
+    level: NaN,
+    userID: NaN,
     playerID: NaN,
-    email : String(),
+    email: String(),
     acceptedTOS: Boolean(),
     verifiedEmail: Boolean(),
     isCheater: Boolean(),
     name: String(),
-    alliance : {
-        id : Number(),
-        rank : Number(),
-        name : String(),
-        fame : Number(),
-        searchingForPlayers : Boolean()
+    alliance: {
+        id: Number(),
+        rank: Number(),
+        name: String(),
+        fame: Number(),
+        searchingForPlayers: Boolean()
     }
 }
 
@@ -159,7 +159,7 @@ xtHandler.on("gas", obj => {
             name: p.SN,
             army: p.A // Keep as string or parse if needed later
         }));
-        
+
         // Sync presets to UI if needed
         syncStatus({ presets: playerInfo.presets });
     }
@@ -175,8 +175,8 @@ xtHandler.on("gal", obj => {
 
 xtHandler.on("gxp", obj => {
     playerInfo.level = obj.LVL + obj.LL
-    
-    if(!botConfig.externalEvent)
+
+    if (!botConfig.externalEvent)
         return
 
     Object.assign(status, {
@@ -214,13 +214,13 @@ xtHandler.on("gin", obj => {
 require("./protocols.js")
 // ... (plugin yükleme kısmı aynı kalacak)
 
-for (const [_,val] of Object.entries(botConfig.plugins)) {
-    if(!val.state)
+for (const [_, val] of Object.entries(botConfig.plugins)) {
+    if (!val.state)
         continue
     try {
         require(`./${val.filename}`)
     }
-    catch(e) {
+    catch (e) {
         console.warn(e)
     }
 }
@@ -228,7 +228,7 @@ for (const [_,val] of Object.entries(botConfig.plugins)) {
 let errorCount = 0
 let sentHits = 0
 
-xtHandler.on("cra", (obj,r) => r == 0 ? sentHits++ : void 0)
+xtHandler.on("cra", (obj, r) => r == 0 ? sentHits++ : void 0)
 
 webSocket.onmessage = async (e) => {
     let message = e.data.toString()
@@ -236,7 +236,7 @@ webSocket.onmessage = async (e) => {
         let params = message.substr(1, message.length - 2).split(rawProtocolSeparator)
         let data = params.splice(1, params.length - 1)
 
-        switch(data[0]) {
+        switch (data[0]) {
             case "gbd":
                 for (const [key, value] of Object.entries(JSON.parse(data[3])))
                     xtHandler.emit(key, value, Number(data[2]), "str")
@@ -247,19 +247,19 @@ webSocket.onmessage = async (e) => {
             case "gfl":
                 xtHandler.emit(data[0], data[3], Number(data[2]), "str");
                 break
-            default: 
+            default:
                 if (data[2] != 0 && !(data[0] == "lli" && data[2] == 453)) {
                     console.warn(`Got result ${err[data[2]] ? err[data[2]] : data[2]} from ${data[0]}`)
                     errorCount++
                 }
             case "core_pol":
             case "rlu":
-                if(xtHandler.listenerCount(data[0]) == 0)
+                if (xtHandler.listenerCount(data[0]) == 0)
                     return
                 xtHandler.emit(data[0], data[3] ? JSON.parse(data[3]) : undefined, Number(data[2]), "str");
         }
     }
-    
+
     else if (message.charAt(0) == "<") {
         switch (message) {
             case "<msg t='sys'><body action='apiOK' r='0'></body></msg>":
@@ -274,8 +274,8 @@ webSocket.onmessage = async (e) => {
         }
     }
 }
-webSocket.onerror = () => {events.emit("unload"); process.exit(0)}
-webSocket.onclose = () => {events.emit("unload"); process.exit(0)}
+webSocket.onerror = () => { events.emit("unload"); process.exit(0) }
+webSocket.onclose = () => { events.emit("unload"); process.exit(0) }
 
 events.on("unload", () => {
     console.log(`errorCount: ${errorCount}`)
@@ -283,11 +283,21 @@ events.on("unload", () => {
 })
 
 const { getResourceCastleList, AreaType, KingdomID, Types } = require('./protocols.js');
+
+// HESAP İSTATİSTİKLERİ - Load'dan ÖNCE tanımla ki listener hazır olsun
+xtHandler.on("gcu", obj => {
+    Object.assign(status, {
+        coin: obj.C1 != 0 ? Math.floor(obj.C1) : undefined,
+        rubies: obj.C2 != 0 ? Math.floor(obj.C2) : undefined,
+    })
+    parentPort.postMessage([ActionType.StatusUser, status])
+})
+
 events.once("load", async (_, r) => {
     const sourceCastleArea = (await getResourceCastleList()).castles.find(e => e.kingdomID == KingdomID.stormIslands)?.areaInfo.find(e => e.type == AreaType.externalKingdom);
 
     sendXT("dcl", JSON.stringify({ CD: 1 }))
-    sendXT("gin", "{}") 
+    sendXT("gin", "{}")
     sendXT("gas", JSON.stringify({ "KID": 0 })); // Fetch presets on load. KID 0 is usually fine for global presets.
 
     setInterval(() => {
@@ -303,7 +313,7 @@ events.once("load", async (_, r) => {
             const mainCastle = detailedList.castles.find(a => a.kingdomID == 0)?.areaInfo[0];
             if (mainCastle && mainCastle.unitInventory) {
                 const inventory = mainCastle.unitInventory.map(u => ({ wodID: u.unitID, count: u.ammount }));
-                syncStatus({ inventory, food: mainCastle.food, coin: mainCastle.coin, rubies: mainCastle.rubies });
+                syncStatus({ inventory });
             }
 
             if (!castleProd) return
@@ -316,14 +326,6 @@ events.once("load", async (_, r) => {
             parentPort.postMessage([ActionType.StatusUser, status])
         })
     }
-
-    xtHandler.on("gcu", obj => {
-        Object.assign(status, {
-            coin: obj.C1 != 0 ? Math.floor(obj.C1) : undefined,
-            rubies: obj.C2 != 0 ? Math.floor(obj.C2) : undefined,
-        })
-        parentPort.postMessage([ActionType.StatusUser, status])
-    })
 })
 
 parentPort.on("message", async obj => {
@@ -337,7 +339,7 @@ parentPort.on("message", async obj => {
                         old_[key] = new_[key];
                 });
             }
-            deepCopy(botConfig,obj[1])
+            deepCopy(botConfig, obj[1])
             events.emit("configModified")
             break
             break
@@ -346,21 +348,21 @@ parentPort.on("message", async obj => {
             break
         case ActionType.GetExternalEvent:
             sendXT("sei", JSON.stringify({}))
-            let [sei, _] = await waitForResult("sei", 1000* 10)
-            if(sei.E.find(e => e.EID == 113))
-                sendXT("glt", JSON.stringify({GST:3}))
+            let [sei, _] = await waitForResult("sei", 1000 * 10)
+            if (sei.E.find(e => e.EID == 113))
+                sendXT("glt", JSON.stringify({ GST: 3 }))
             else
-                sendXT("glt", JSON.stringify({GST:2}))
-            let [glt, _2] = await waitForResult("glt", 1000* 10)
-            parentPort.postMessage([ActionType.GetExternalEvent, {sei: sei, glt: glt}])
+                sendXT("glt", JSON.stringify({ GST: 2 }))
+            let [glt, _2] = await waitForResult("glt", 1000 * 10)
+            parentPort.postMessage([ActionType.GetExternalEvent, { sei: sei, glt: glt }])
             break
-        
+
     }
 })
 
 let retry = async () => {
-    if(botConfig.externalEvent) {
-        sendXT("tlep", JSON.stringify({TLT: botConfig.tempServerData.glt.TLT}))
+    if (botConfig.externalEvent) {
+        sendXT("tlep", JSON.stringify({ TLT: botConfig.tempServerData.glt.TLT }))
         return
     }
     // const RCT = await new Promise(resolve => {
@@ -420,15 +422,14 @@ xtHandler.on("vck", async _ => {
 xtHandler.on("rlu", _ => webSocket.send('<msg t="sys"><body action="autoJoin" r="-1"></body></msg>'))
 
 let loginAttempts = 0
-xtHandler.on("lli", async (obj,r) => {
-    if(r == 453)
-    {
+xtHandler.on("lli", async (obj, r) => {
+    if (r == 453) {
         console.log(`retrying login in ${obj.CD} seconds`)
         setTimeout(retry, obj.CD * 1000)
         return
     }
 
-    if(err[r] == "IS_BANNED") {
+    if (err[r] == "IS_BANNED") {
         console.log(`retrying login in ${Math.round(obj.RS / 60 / 60)} hours`)
         setTimeout(retry, obj.RS * 1000)
         return
@@ -452,15 +453,15 @@ xtHandler.on("lli", async (obj,r) => {
         setInterval(() => sendXT("pin", "<RoundHouseKick>"), 1000 * 60).unref()
         return
     }
-    
+
     if (r == err["INVALID_LOGIN_TOKEN"]) {
         loginAttempts++
         if (loginAttempts < 30)
             return retry()
     }
-    if(botConfig.internalWorker) 
+    if (botConfig.internalWorker)
         process.exit(0)
-    
+
     status.hasError = true
     parentPort.postMessage([ActionType.StatusUser, status])
     const userDatabase = new DatabaseSync('./user.db')
@@ -471,8 +472,8 @@ xtHandler.on("lli", async (obj,r) => {
 
 xtHandler.on("sne", obj => {
     obj.MSG.forEach(message => {
-        if(message[1] != 67)
+        if (message[1] != 67)
             return
-        sendXT("dms", JSON.stringify({MID:message[0]}))
+        sendXT("dms", JSON.stringify({ MID: message[0] }))
     });
 })

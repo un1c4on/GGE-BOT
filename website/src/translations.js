@@ -7,6 +7,8 @@ export const translations = {
         "PLUGINS": "PLUGINS",
         "ACTIVE PLUGINS": "ACTIVE PLUGINS",
         "Save Changes": "Save Changes",
+        "Saved!": "Saved!",
+        "No Changes": "No Changes",
         "Loading settings...": "Loading settings...",
         "Username": "Username",
         "Password": "Password",
@@ -52,8 +54,6 @@ export const translations = {
         "Handles Hits": "Handles Hits",
         "commander": "Commander",
         "Commander": "Commander",
-        "Res Send": "Resource Sender",
-        "Ressend": "Resource Sender",
         "Feast": "Feast",
         "GetRegion": "Get Regions",
         "Mead replace": "Mead Repair",
@@ -95,7 +95,7 @@ export const translations = {
         "Repair for Mead": "Repairs using Mead automatically",
         "Automatic feast management": "Manages feasts automatically",
         "Manage mead production and consumption": "Manages mead production and consumption",
-        
+
         // Plugin Options & Difficulties
         "Easy": "Easy", "Easy+": "Easy+", "Intermediate": "Intermediate", "Intermediate+": "Intermediate+",
         "Hard": "Hard", "Hard+": "Hard+", "Expert": "Expert", "Expert+": "Expert+",
@@ -110,7 +110,14 @@ export const translations = {
         "Use Game Preset": "Use Game Preset", "Preset ID (Slot Number)": "Preset ID (Slot Number)",
         "Max Waves": "Max Waves", "1 Wave": "1 Wave", "2 Waves": "2 Waves", "3 Waves": "3 Waves", "4 Waves": "4 Waves",
         "Attack Delay (Seconds)": "Attack Delay (Seconds)", "Attack Delay Randomization (Seconds)": "Attack Delay Randomization (Seconds)",
-        "Attack Left Flank": "Attack Left Flank", "Attack Middle": "Attack Middle", "Attack Right Flank": "Attack Right Flank"
+        "Attack Left Flank": "Attack Left Flank", "Attack Middle": "Attack Middle", "Attack Right Flank": "Attack Right Flank",
+        "Attack Courtyard": "Attack Courtyard", "Easy forts only": "Easy forts only", "Add worser forts": "Add worser forts",
+        "Buy Coins": "Buy Coins", "Buy Deco": "Buy Deco", "Reputation mode": "Reputation mode", "No event tools": "No event tools",
+        "Use Feather": "Use Feather", "Use Coin (Gold Horse)": "Use Coin (Gold Horse)",
+        "Max Waves (1-4)": "Max Waves (1-4)", "Waves till chest": "Waves till chest",
+        // Labels
+        "Horse Settings": "Horse Settings", "Attack Settings": "Attack Settings", "Event Settings": "Event Settings",
+        "Tool/Chest Settings": "Tool/Chest Settings"
     },
     tr: {
         "Dashboard": "Kontrol Paneli",
@@ -120,6 +127,8 @@ export const translations = {
         "PLUGINS": "EKLENTİLER",
         "ACTIVE PLUGINS": "AKTİF EKLENTİLER",
         "Save Changes": "Değişiklikleri Kaydet",
+        "Saved!": "Kaydedildi!",
+        "No Changes": "Değişiklik Yok",
         "Loading settings...": "Ayarlar yükleniyor...",
         "Username": "Kullanıcı Adı",
         "Password": "Şifre",
@@ -165,8 +174,6 @@ export const translations = {
         "Handles Hits": "Vuruşları Yönetir",
         "commander": "Komutan",
         "Commander": "Komutan",
-        "Res Send": "Kaynak Gönderimi",
-        "Ressend": "Kaynak Gönderimi",
         "Feast": "Ziyafet",
         "GetRegion": "Bölgeleri Topla",
         "Mead replace": "Bal Şarabı/Onarım",
@@ -208,7 +215,7 @@ export const translations = {
         "Repair for Mead": "Bal şarabı ile otomatik onarım yapar",
         "Automatic feast management": "Şölenleri otomatik yönetir",
         "Manage mead production and consumption": "Mey üretim ve tüketimini yönetir",
-        
+
         // Eklenti Ayarları ve Zorluklar
         "Easy": "Kolay", "Easy+": "Kolay+", "Intermediate": "Orta", "Intermediate+": "Orta+",
         "Hard": "Zor", "Hard+": "Zor+", "Expert": "Uzman", "Expert+": "Uzman+",
@@ -223,7 +230,14 @@ export const translations = {
         "Use Game Preset": "Oyun Önayarını Kullan", "Preset ID (Slot Number)": "Önayar Slot ID",
         "Max Waves": "Maksimum Dalga", "1 Wave": "1 Dalga", "2 Waves": "2 Dalga", "3 Waves": "3 Dalga", "4 Waves": "4 Dalga",
         "Attack Delay (Seconds)": "Saldırı Gecikmesi (Saniye)", "Attack Delay Randomization (Seconds)": "Gecikme Rastgeleliği (Saniye)",
-        "Attack Left Flank": "Sol Kanat Saldır", "Attack Middle": "Orta Kanat Saldır", "Attack Right Flank": "Sağ Kanat Saldır"
+        "Attack Left Flank": "Sol Kanat", "Attack Middle": "Orta", "Attack Right Flank": "Sağ Kanat",
+        "Attack Courtyard": "Avluya Saldır", "Easy forts only": "Sadece Kolay Adalar", "Add worser forts": "Daha Zayıf Adalar Ekle",
+        "Buy Coins": "Altın Satın Al", "Buy Deco": "Dekorasyon Satın Al", "Reputation mode": "Prestij Modu", "No event tools": "Etkinlik Aleti Yok",
+        "Use Feather": "Tüy Kullan", "Use Coin (Gold Horse)": "Altın Kullan (Turbo)",
+        "Max Waves (1-4)": "Maks. Dalga (1-4)", "Waves till chest": "Sandık İçin Dalga",
+        // Label'lar
+        "Horse Settings": "At Ayarları", "Attack Settings": "Saldırı Ayarları", "Event Settings": "Etkinlik Ayarları",
+        "Tool/Chest Settings": "Alet/Sandık Ayarları"
     }
 };
 

@@ -11,8 +11,32 @@ if (isMainThread) {
             {
                 type: "Text",
                 label: "Com White List",
+                description: "Commander range (e.g., 1-3 for commanders 1,2,3)",
                 key: "commanderWhiteList"
             },
+            { type: "Label", label: "Horse Settings" },
+            {
+                type: "Checkbox",
+                label: "Use Feather",
+                description: "Use travel speed boosts",
+                key: "useFeather",
+                default: false
+            },
+            {
+                type: "Checkbox",
+                label: "Use Coin",
+                description: "Use fast recruitment",
+                key: "useCoin",
+                default: false
+            },
+            {
+                type: "Checkbox",
+                label: "Use Time Skips",
+                description: "Skip travel time",
+                key: "useTimeSkips",
+                default: false
+            },
+            { type: "Label", label: "Attack Settings" },
             ...getPresetOptions()
         ]
     }
@@ -26,5 +50,5 @@ const pluginOptions = botConfig.plugins[require('path').basename(__filename).sli
 const kid = KingdomID.everWinterGlacier
 const level = 20
 
-events.on("load", () => 
+events.on("load", () =>
     fortressHit(name, kid, level, pluginOptions))

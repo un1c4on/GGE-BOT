@@ -10,49 +10,57 @@ if (isMainThread)
             {
                 type: "Text",
                 label: "Com White List",
+                description: "Commander range (e.g., 1-3 for commanders 1,2,3)",
                 key: "commanderWhiteList"
             },
-            { type: "Label", label: "Travel Settings" },
+            { type: "Label", label: "Horse Settings" },
             {
                 type: "Checkbox",
-                label: "Use Feather (Travel Boost)",
+                label: "Use Feather",
+                description: "Use travel speed boosts",
                 key: "useFeather",
                 default: false
             },
             {
                 type: "Checkbox",
-                label: "Use Coin (Gold Horse)",
+                label: "Use Coin",
+                description: "Use fast recruitment",
                 key: "useCoin",
                 default: false
             },
             { type: "Label", label: "Attack Settings" },
             {
                 type: "Text",
-                label: "Max Waves (1-4)",
+                label: "Max Waves",
+                description: "Maximum number of attack waves (1-4)",
                 key: "attackWaves",
                 default: "4"
             },
             {
                 type: "Checkbox",
                 label: "Attack Left Flank",
+                description: "Enable attacks on left side",
                 key: "attackLeft",
                 default: true
             },
             {
                 type: "Checkbox",
                 label: "Attack Middle",
+                description: "Enable attacks on center",
                 key: "attackMiddle",
                 default: true
             },
             {
                 type: "Checkbox",
                 label: "Attack Right Flank",
+                description: "Enable attacks on right side",
                 key: "attackRight",
                 default: true
             },
             {
                 type: "Checkbox",
                 label: "Attack Courtyard",
+                description: "Enable courtyard attacks",
                 key: "attackCourtyard",
                 default: true
             },
@@ -60,18 +68,21 @@ if (isMainThread)
             {
                 type: "Checkbox",
                 label: "Lowest value chests first",
+                description: "Prioritize low-value chests",
                 key: "lowValueChests",
                 default: false
             },
             {
                 type: "Checkbox",
                 label: "No event tools",
+                description: "Exclude event-specific tools",
                 key: "noEventTools",
                 default: false
             },
             {
                 type: "Checkbox",
                 label: "Reputation mode",
+                description: "Focus on reputation gains",
                 key: "reputation",
                 default: false
             }
@@ -119,14 +130,14 @@ let quit = false
 
 events.on("eventStop", eventInfo => {
     if (eventInfo.EID != eventID) return
-    if(quit) return
+    if (quit) return
     console.log(`[${name}] Event ended.`)
     quit = true
 })
 
 events.on("eventStart", async eventInfo => {
-    if(eventInfo.EID != eventID) return
-    
+    if (eventInfo.EID != eventID) return
+
     quit = false
     while (!quit) {
         let comList = undefined
@@ -179,11 +190,11 @@ events.on("eventStart", async eventInfo => {
                     if (unitInfo == undefined || unitInfo.wodID == 277) continue
 
                     if (unitInfo.typ == 'Attack') {
-                         if (pluginOptions.noEventTools && unitInfo.pointBonus) continue;
-                         if (unitInfo.wallBonus) attackerWallTools.push([unitInfo, unit.ammount])
-                         else if (unitInfo.gateBonus) attackerGateTools.push([unitInfo, unit.ammount])
-                         else if (unitInfo.defRangeBonus) attackerShieldTools.push([unitInfo, unit.ammount])
-                         else attackerSpecialTools.push([unitInfo, unit.ammount])
+                        if (pluginOptions.noEventTools && unitInfo.pointBonus) continue;
+                        if (unitInfo.wallBonus) attackerWallTools.push([unitInfo, unit.ammount])
+                        else if (unitInfo.gateBonus) attackerGateTools.push([unitInfo, unit.ammount])
+                        else if (unitInfo.defRangeBonus) attackerShieldTools.push([unitInfo, unit.ammount])
+                        else attackerSpecialTools.push([unitInfo, unit.ammount])
                     }
                     else if (unitInfo.fightType == 0) {
                         if (unitInfo.role == "melee") attackerMeleeTroops.push([unitInfo, unit.ammount])
@@ -191,11 +202,11 @@ events.on("eventStart", async eventInfo => {
                     }
                 }
 
-                let allTroopCount = attackerRangeTroops.reduce((a,b)=>a+b[1],0) + attackerMeleeTroops.reduce((a,b)=>a+b[1],0)
+                let allTroopCount = attackerRangeTroops.reduce((a, b) => a + b[1], 0) + attackerMeleeTroops.reduce((a, b) => a + b[1], 0)
                 if (allTroopCount < minTroopCount) throw "NO_MORE_TROOPS"
 
                 const sortTls = (l) => {
-                    l.sort((a,b) => Number(b[0].pointBonus || 0) - Number(a[0].pointBonus || 0))
+                    l.sort((a, b) => Number(b[0].pointBonus || 0) - Number(a[0].pointBonus || 0))
                     if (pluginOptions.lowValueChests) l.reverse()
                 }
                 sortTls(attackerWallTools); sortTls(attackerGateTools); sortTls(attackerShieldTools); sortTls(attackerSpecialTools);
@@ -252,19 +263,19 @@ events.on("eventStart", async eventInfo => {
             })
 
             if (attackInfoResult.result != 0) {
-                 if(attackInfoResult.result == 256) useCommander(commander.lordID) // LORD_IS_USED
+                if (attackInfoResult.result == 256) useCommander(commander.lordID) // LORD_IS_USED
             } else {
-                 console.info(`[${name}] Attack sent to ${attackInfoResult.AAM.M.TA[1]}:${attackInfoResult.AAM.M.TA[2]}`)
+                console.info(`[${name}] Attack sent to ${attackInfoResult.AAM.M.TA[1]}:${attackInfoResult.AAM.M.TA[2]}`)
             }
             freeCommander(commander.lordID)
             await new Promise(r => setTimeout(r, 4000))
         } catch (e) {
             freeCommander(commander.lordID)
             if (e === "NO_MORE_TROOPS") {
-                 await new Promise(resolve => movementEvents.once("return", resolve))
+                await new Promise(resolve => movementEvents.once("return", resolve))
             } else {
-                 console.error(`[${name}] Error:`, e)
-                 await new Promise(r => setTimeout(r, 5000))
+                console.error(`[${name}] Error:`, e)
+                await new Promise(r => setTimeout(r, 5000))
             }
         }
     }

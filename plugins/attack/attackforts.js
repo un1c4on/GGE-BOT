@@ -11,6 +11,7 @@ if (isMainThread) {
             {
                 type: "Select",
                 label: "Max Waves",
+                description: "Maximum number of attack waves",
                 key: "maxWaves",
                 selection: [
                     "1 Wave",
@@ -18,40 +19,62 @@ if (isMainThread) {
                     "3 Waves",
                     "4 Waves"
                 ],
-                default: 0 // 0 index = 1 Wave
+                default: 0
             },
             {
                 type: "Text",
                 label: "Com White List",
+                description: "Commander range (e.g., 1-3 for commanders 1,2,3)",
                 key: "commanderWhiteList"
+            },
+            { type: "Label", label: "Horse Settings" },
+            {
+                type: "Checkbox",
+                label: "Use Feather",
+                description: "Use travel speed boosts",
+                key: "useFeather",
+                default: false
             },
             {
                 type: "Checkbox",
+                label: "Use Coin",
+                description: "Use fast recruitment",
+                key: "useCoin",
+                default: false
+            },
+            {
+                type: "Checkbox",
+                label: "Use Time Skips",
+                description: "Skip travel time",
+                key: "useTimeSkips",
+                default: false
+            },
+            { type: "Label", label: "Attack Settings" },
+            {
+                type: "Checkbox",
                 label: "Easy forts only",
+                description: "Only attack easy difficulty forts",
                 key: "easyfortsonly",
                 default: false
             },
             {
                 type: "Checkbox",
                 label: "Add worser forts",
+                description: "Include lower level forts in rotation",
                 key: "addworserforts",
                 default: false
             },
             {
                 type: "Checkbox",
-                label: "Use Coin",
-                key: "useCoin",
-                default: false
-            },
-            {
-                type: "Checkbox",
                 label: "Buy Coins",
+                description: "Auto-purchase coins with aqua",
                 key: "buycoins",
                 default: false
             },
             {
                 type: "Checkbox",
                 label: "Buy Deco",
+                description: "Auto-purchase decorations with aqua",
                 key: "buydeco",
                 default: false
             },
@@ -107,7 +130,7 @@ function spiralCoordinates(n) {
     return { x, y }
 }
 
-const pluginOptions = 
+const pluginOptions =
     botConfig.plugins[require('path').basename(__filename).slice(0, -3)] ?? {}
 
 pluginOptions.useGamePreset ??= false;
@@ -130,12 +153,12 @@ events.once("load", async () => {
 
     const sourceCastleArea = (await getResourceCastleList()).castles.find(e => e.kingdomID == kid)
         .areaInfo.find(e => e.type == AreaType.externalKingdom);
-        
+
     xtHandler.on("dcl", obj => {
         const castleProd = Types.DetailedCastleList(obj)
             .castles.find(a => a.kingdomID == kid)
             .areaInfo.find(a => a.areaID == sourceCastleArea.extraData[0])
-        
+
         if (pluginOptions["buycoins"]) {
             if (castleProd.aqua > 500000) {
                 castleProd.aqua -= 500000
@@ -156,7 +179,7 @@ events.once("load", async () => {
 
     if (pluginOptions["addworserforts"])
         allowedLevels.push(11, 10)
-    
+
     let towerTime = new WeakMap()
     let sortedAreaInfo = []
     const movements = []
@@ -164,15 +187,15 @@ events.once("load", async () => {
     xtHandler.on("gam", obj => {
         const movementsGAA = Types.GetAllMovements(obj)
         movementsGAA?.movements.forEach(movement => {
-            if(kid != movement.movement.kingdomID)
+            if (kid != movement.movement.kingdomID)
                 return
-            
+
             const targetAttack = movement.movement.targetAttack
 
-            if(type != targetAttack.type)
+            if (type != targetAttack.type)
                 return
 
-            if(movements.find(e => e.x == targetAttack.x && e.y == targetAttack.y))
+            if (movements.find(e => e.x == targetAttack.x && e.y == targetAttack.y))
                 return
 
             movements.push(targetAttack)
@@ -180,16 +203,16 @@ events.once("load", async () => {
     })
     movementEvents.on("return", movementInfo => {
         const sourceAttack = movementInfo.movement.movement.sourceAttack
-        if(kid != movementInfo.movement.movement.kingdomID ||
-           type != sourceAttack.type)
-           return
+        if (kid != movementInfo.movement.movement.kingdomID ||
+            type != sourceAttack.type)
+            return
 
         let index = movements.findIndex(e => e.x == sourceAttack.x && e.y == sourceAttack)
-        if(index == -1)
+        if (index == -1)
             return
         movements.splice(index, 1)
     })
-    
+
     const sendHit = async () => {
         let comList = undefined
         if (![, ""].includes(pluginOptions.commanderWhiteList)) {
@@ -197,7 +220,7 @@ events.once("load", async () => {
             comList = Array.from({ length: end - start + 1 }, (_, i) => start + i)
         }
 
-        const commander = await waitForCommanderAvailable(comList, undefined, 
+        const commander = await waitForCommanderAvailable(comList, undefined,
             (a, b) => getCommanderStats(b).relicLootBonus - getCommanderStats(a).relicLootBonus)
 
         try {
@@ -214,24 +237,24 @@ events.once("load", async () => {
                 const timeSinceEpoch = Date.now()
                 for (let i = 0; i < sortedAreaInfo.length; i++) {
                     const areaInfo = sortedAreaInfo[i]
-                    
-                    if(movements.find(e => e.x == areaInfo.x && e.y == areaInfo.y))
+
+                    if (movements.find(e => e.x == areaInfo.x && e.y == areaInfo.y))
                         continue
 
                     let time = towerTime.get(areaInfo) - timeSinceEpoch
                     if (time > 0)
                         continue
 
-                    Object.assign(areaInfo, 
+                    Object.assign(areaInfo,
                         (await ClientCommands.getAreaInfo(kid, areaInfo.x, areaInfo.y, areaInfo.x, areaInfo.y)())
-                        .areaInfo[0])
+                            .areaInfo[0])
 
-                    if(!allowedLevels.includes(areaInfo.extraData[2])) {
+                    if (!allowedLevels.includes(areaInfo.extraData[2])) {
                         continue
                     }
 
                     towerTime.set(areaInfo, timeSinceEpoch + areaInfo.extraData[5] * 1000)
-                    if(areaInfo.extraData[3] > 0)
+                    if (areaInfo.extraData[3] > 0)
                         continue
                     if (towerTime.get(areaInfo) - Date.now() > 0)
                         continue
@@ -298,11 +321,11 @@ events.once("load", async () => {
 
                     attackInfo.A.forEach((wave, i) => {
                         // Seçilen dalga sayısını geçme
-                        if(i >= maxWaves)
+                        if (i >= maxWaves)
                             return
                         const commanderStats = getCommanderStats(commander)
                         const maxTroopFlank = getAmountSoldiersFlank(level) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100
-                        
+
                         let maxTroops = maxTroopFlank
 
                         wave.L.U.forEach((unitSlot, i) =>
@@ -325,16 +348,16 @@ events.once("load", async () => {
                         return false
                     return true
                 })
-                
+
                 const executionDuration = ((Date.now() - executionStartTime) / 1000).toFixed(2);
-                return {...obj, result: r, executionDuration}
+                return { ...obj, result: r, executionDuration }
             })
-            
+
             if (!attackInfo) {
                 freeCommander(commander.lordID)
                 return false
             }
-            if(attackInfo.result != 0)
+            if (attackInfo.result != 0)
                 throw err[attackInfo.result]
 
             console.info(`[${name}] Hitting target C${attackInfo.AAM.UM.L.VIS + 1} ${attackInfo.AAM.M.TA[1]}:${attackInfo.AAM.M.TA[2]} ${pretty(Math.round(1000000000 * Math.abs(Math.max(0, attackInfo.AAM.M.TT - attackInfo.AAM.M.PT))), 's') + " till impact"} (Setup: ${attackInfo.executionDuration}s)`)
@@ -395,28 +418,28 @@ events.once("load", async () => {
         let gaa = await getAreaCached(kid, rect.x, rect.y, rect.w, rect.h)
 
         let areaInfo = gaa.areaInfo.filter(ai => ai.type == type)
-        .sort((a, b) => {
-            let d1 = Math.sqrt(Math.pow(sourceCastleArea.x - a.x, 2) + Math.pow(sourceCastleArea.y - a.y, 2))
-            let d2 = Math.sqrt(Math.pow(sourceCastleArea.x - b.x, 2) + Math.pow(sourceCastleArea.y - b.y, 2))
-            if (d1 < d2)
-                return -1
-            if (d1 > d2)
-                return 1
-        })
+            .sort((a, b) => {
+                let d1 = Math.sqrt(Math.pow(sourceCastleArea.x - a.x, 2) + Math.pow(sourceCastleArea.y - a.y, 2))
+                let d2 = Math.sqrt(Math.pow(sourceCastleArea.x - b.x, 2) + Math.pow(sourceCastleArea.y - b.y, 2))
+                if (d1 < d2)
+                    return -1
+                if (d1 > d2)
+                    return 1
+            })
         const timeSinceEpoch = Date.now()
         areaInfo.forEach(ai =>
             towerTime.set(ai, timeSinceEpoch + ai.extraData[5] * 1000))
 
         sortedAreaInfo = sortedAreaInfo.concat(areaInfo)
         sortedAreaInfo.sort((a, b) => {
-            if ((a.extraData[2] % 10) > (b.extraData[2] % 10)) 
+            if ((a.extraData[2] % 10) > (b.extraData[2] % 10))
                 return -1
-            if ((a.extraData[2] % 10) < (b.extraData[2] % 10)) 
+            if ((a.extraData[2] % 10) < (b.extraData[2] % 10))
                 return 1
             //hits left
-            if (a.extraData[4] < b.extraData[4]) 
+            if (a.extraData[4] < b.extraData[4])
                 return -1
-            if (a.extraData[4] > b.extraData[4]) 
+            if (a.extraData[4] > b.extraData[4])
                 return 1
 
             return 0
@@ -431,9 +454,9 @@ events.once("load", async () => {
             const areaInfo = sortedAreaInfo[i]
 
             if (!allowedLevels.includes(areaInfo.extraData[2]))
-                if((towerTime.get(areaInfo) - Date.now()) <= 0)
+                if ((towerTime.get(areaInfo) - Date.now()) <= 0)
                     continue
-            
+
             if (!movements.find(movement => movement.x == areaInfo.x && movement.y == areaInfo.y))
                 minimumTimeTillHit = Math.min(minimumTimeTillHit, towerTime.get(areaInfo))
         }
@@ -441,7 +464,7 @@ events.once("load", async () => {
         let time = (Math.max(0, minimumTimeTillHit - Date.now()))
         console.info(`[${name}] Waiting ${Math.round(time / 1000)} for next possible fortress hit`)
         await new Promise(r => setTimeout(r, time).unref())
-        
+
         while (await sendHit());
     }
 })

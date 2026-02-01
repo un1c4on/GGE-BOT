@@ -1,6 +1,6 @@
 import * as React from 'react'
-import { 
-    Table, TableBody, TableCell, TableContainer, TableHead, TableRow, 
+import {
+    Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
     Paper, Button, Backdrop, Checkbox, Box, Typography, Chip,
     Dialog, DialogTitle, DialogContent, DialogActions, TextField,
     Select, MenuItem, FormControl, InputLabel, Alert
@@ -19,19 +19,19 @@ function Log(props) {
         const logGrabber = msg => {
             let [err, action, obj] = JSON.parse(msg.data.toString())
             if (Number(action) !== ActionType.GetLogs || Number(err) !== ErrorType.Success) return
-            
+
             setCurrentLogs(obj[0].splice(obj[1], obj[0].length - 1).concat(obj[0]).map((obj, index) =>
                 <div key={`${Date.now()}-${index}`} style={{
                     color: obj[0] === LogLevel.Error ? "#ff5555" : obj[0] === LogLevel.Warn ? "#ffb86c" : "#8be9fd",
                     fontFamily: 'monospace', borderBottom: '1px solid #333', padding: '2px 0'
                 }}>
-                    <span style={{color: '#6272a4', marginRight: '10px'}}>[{new Date().toLocaleTimeString()}]</span>
+                    <span style={{ color: '#6272a4', marginRight: '10px' }}>[{new Date().toLocaleTimeString()}]</span>
                     {obj[1]}
                 </div>
             ).reverse())
         }
         props.ws.addEventListener("message", logGrabber)
-        
+
         // Log penceresi AÇIKSA ve kullanıcı belliyse iste
         if (props.user && isOpen) {
             props.ws.send(JSON.stringify([ErrorType.Success, ActionType.GetLogs, props.user]));
@@ -44,7 +44,7 @@ function Log(props) {
         <Paper sx={{ maxHeight: '90%', overflow: 'hidden', height: '80%', width: '60%', bgcolor: '#000', color: '#f8f8f2', display: 'flex', flexDirection: 'column' }}>
             <Box sx={{ p: 1, borderBottom: '1px solid #444', display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: '#1e1e1e' }}>
                 <Typography variant="h6" sx={{ color: '#fff', fontFamily: 'monospace' }}>
-                     {props.user ? `${props.user.name} Logs` : "System Logs"}
+                    {props.user ? `${props.user.name} Logs` : "System Logs"}
                 </Typography>
                 <Button variant="outlined" color="error" size="small" onClick={() => setCurrentLogs([])}>
                     {t("Clear Logs")}
@@ -65,7 +65,7 @@ export default function GGEUserTable(props) {
     const [selected, setSelected] = React.useState([])
     const [openLogs, setOpenLogs] = React.useState(false)
     const [logUser, setLogUser] = React.useState(null)
-    
+
     // Dialog States
     const [openAddDialog, setOpenAddDialog] = React.useState(false);
     const [addError, setAddError] = React.useState(null);
@@ -91,9 +91,9 @@ export default function GGEUserTable(props) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newCastle)
             });
-            
+
             const data = await response.json();
-            
+
             if (response.ok) {
                 setOpenAddDialog(false);
                 setNewCastle({ server: '10', game_username: '', game_password: '' });
@@ -107,7 +107,7 @@ export default function GGEUserTable(props) {
     };
 
     const handleRemoveSelected = () => {
-        if(selected.length === 0) return;
+        if (selected.length === 0) return;
         const usersToRemove = props.rows.filter(r => selected.includes(r.id));
         props.ws.send(JSON.stringify([ErrorType.Success, ActionType.RemoveUser, usersToRemove]));
         setSelected([]);
@@ -132,7 +132,12 @@ export default function GGEUserTable(props) {
                                 const getEnabledPlugins = () => {
                                     let enabledPlugins = []
                                     Object.entries(row.plugins).forEach(([key, value]) => {
-                                        if (value.state === true) enabledPlugins.push(t(key))
+                                        if (value.state === true && key !== 'presets') {
+                                            // Find plugin info from props.plugins to get the proper name
+                                            const plugin = props.plugins.find(p => p.key === key);
+                                            const displayName = plugin ? t(plugin.name) : t(key);
+                                            enabledPlugins.push(displayName);
+                                        }
                                     })
                                     return enabledPlugins
                                 }
@@ -154,7 +159,8 @@ export default function GGEUserTable(props) {
                                         <TableCell>
                                             <Box sx={{ display: 'flex', gap: 1 }}>
                                                 {status.level && <Chip label={`${t("Level")} ${status.level}`} size="small" variant="outlined" />}
-                                                {status.food && <Chip label={`${status.food} ${t("Food")}`} size="small" color="success" />}
+                                                {status.coin && <Chip label={`${status.coin} ${t("Coin")}`} size="small" color="warning" />}
+                                                {status.rubies && <Chip label={`${status.rubies} ${t("Rubies")}`} size="small" color="error" />}
                                             </Box>
                                         </TableCell>
                                         <TableCell align="right">
@@ -178,22 +184,22 @@ export default function GGEUserTable(props) {
     return (
         <>
             <Backdrop sx={theme => ({ color: '#fff', zIndex: theme.zIndex.drawer + 1 })} open={openLogs} onClick={() => { props.ws.send(JSON.stringify([ErrorType.Success, ActionType.GetLogs, undefined])); handleLogClose() }}>
-                <Log ws={props.ws} t={t} user={logUser} isOpen={openLogs}/>
+                <Log ws={props.ws} t={t} user={logUser} isOpen={openLogs} />
             </Backdrop>
-            
+
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
                 <Typography variant="h5" fontWeight="bold" color="primary">{t("Game Castles")}</Typography>
                 <Box>
                     {selected.length > 0 && (
-                        <Button 
-                            variant="outlined" color="error" startIcon={<DeleteIcon />} 
+                        <Button
+                            variant="outlined" color="error" startIcon={<DeleteIcon />}
                             onClick={handleRemoveSelected} sx={{ mr: 2 }}
                         >
                             {t("Remove Selected")}
                         </Button>
                     )}
-                    <Button 
-                        variant="contained" color="secondary" startIcon={<AddIcon />} 
+                    <Button
+                        variant="contained" color="secondary" startIcon={<AddIcon />}
                         onClick={() => setOpenAddDialog(true)}
                     >
                         {t("Add Castle")}
@@ -201,7 +207,7 @@ export default function GGEUserTable(props) {
                 </Box>
             </Box>
 
-            <PlayerTable/>
+            <PlayerTable />
 
             {/* ADD CASTLE DIALOG */}
             <Dialog open={openAddDialog} onClose={() => setOpenAddDialog(false)}>
@@ -215,7 +221,7 @@ export default function GGEUserTable(props) {
                                 labelId="server-select-label"
                                 value={newCastle.server}
                                 label={t("Server")}
-                                onChange={(e) => setNewCastle({...newCastle, server: e.target.value})}
+                                onChange={(e) => setNewCastle({ ...newCastle, server: e.target.value })}
                             >
                                 <MenuItem value="10">TR1 (Türkiye)</MenuItem>
                                 <MenuItem value="387">INT1 (International 1)</MenuItem>
@@ -225,15 +231,15 @@ export default function GGEUserTable(props) {
                                 <MenuItem value="385">PL1 (Poland)</MenuItem>
                             </Select>
                         </FormControl>
-                        <TextField 
-                            label={t("Game Username")} fullWidth size="small" 
+                        <TextField
+                            label={t("Game Username")} fullWidth size="small"
                             value={newCastle.game_username}
-                            onChange={(e) => setNewCastle({...newCastle, game_username: e.target.value})}
+                            onChange={(e) => setNewCastle({ ...newCastle, game_username: e.target.value })}
                         />
-                        <TextField 
-                            label={t("Game Password")} fullWidth size="small" type="password" 
+                        <TextField
+                            label={t("Game Password")} fullWidth size="small" type="password"
                             value={newCastle.game_password}
-                            onChange={(e) => setNewCastle({...newCastle, game_password: e.target.value})}
+                            onChange={(e) => setNewCastle({ ...newCastle, game_password: e.target.value })}
                         />
                     </Box>
                 </DialogContent>
