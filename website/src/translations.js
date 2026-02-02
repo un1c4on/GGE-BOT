@@ -130,7 +130,8 @@ export const translations = {
         "Network error": "Network error",
         "Cancel": "Cancel",
         "Add": "Add",
-        "Clear Logs": "Clear Logs"
+        "Clear Logs": "Clear Logs",
+        "Recruit Logs": "Recruit Logs"
     },
     tr: {
         "Dashboard": "Kontrol Paneli",
@@ -263,7 +264,8 @@ export const translations = {
         "Network error": "Ağ hatası",
         "Cancel": "İptal",
         "Add": "Ekle",
-        "Clear Logs": "Günlükleri Temizle"
+        "Clear Logs": "Günlükleri Temizle",
+        "Recruit Logs": "Asker Basma Logları"
     }
 };
 

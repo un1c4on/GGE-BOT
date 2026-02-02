@@ -39,14 +39,57 @@ const PluginOption = ({ pluginData, parentKey, userPlugins, onChange, t }) => {
         case "Select":
             return <FormControl fullWidth size="small" sx={{ my: 1 }}>
                 <InputLabel>{t(pluginData.label)}</InputLabel>
-                <Select value={currentValue} label={pluginData.label} onChange={(e) => handleChange(e.target.value)}>
-                    {pluginData.selection.map((e, i) => <MenuItem value={i} key={i}>{t(e)}</MenuItem>)}
+                <Select value={currentValue ?? ((typeof pluginData.selection?.[0] === 'object') ? pluginData.selection[0].value : 0)} label={pluginData.label} onChange={(e) => handleChange(e.target.value)}>
+                    {pluginData.selection.map((e, i) => {
+                        const isObj = typeof e === 'object' && e !== null;
+                        const val = isObj ? e.value : i;
+                        const lab = isObj ? e.label : e;
+                        return <MenuItem value={val} key={val}>{t(lab)}</MenuItem>
+                    })}
                 </Select>
             </FormControl>
         case "Slider":
             return <Box sx={{ px: 2, my: 2 }}>
                 <Typography variant="caption" color="gray">{t(pluginData.label)} ({currentValue}%)</Typography>
                 <Slider size="small" value={currentValue} onChange={(_, nv) => handleChange(nv)} />
+            </Box>
+        case "MultiSelect":
+            // Checkbox listesi ile çoklu seçim
+            const selectedIds = Array.isArray(currentValue) ? currentValue : [];
+
+            return <Box sx={{ my: 1, border: '1px solid rgba(255,255,255,0.2)', borderRadius: 1, p: 1.5, bgcolor: 'rgba(0,0,0,0.2)' }}>
+                <Typography variant="subtitle2" sx={{ mb: 1, color: '#90caf9', fontWeight: 'bold' }}>{t(pluginData.label)}</Typography>
+                <Box sx={{ maxHeight: 300, overflowY: 'auto' }}>
+                    {pluginData.selection.map((item) => {
+                        const isObj = typeof item === 'object' && item !== null;
+                        const unitId = isObj ? item.value : item;
+                        const unitLabel = isObj ? item.label : item;
+                        const isChecked = selectedIds.includes(unitId);
+
+                        return (
+                            <FormControlLabel
+                                key={unitId}
+                                control={
+                                    <Checkbox
+                                        size="small"
+                                        checked={isChecked}
+                                        onChange={(e) => {
+                                            const newSelection = e.target.checked
+                                                ? [...selectedIds, unitId]
+                                                : selectedIds.filter(id => id !== unitId);
+                                            handleChange(newSelection);
+                                        }}
+                                    />
+                                }
+                                label={<Typography variant="body2" sx={{ fontSize: '0.85rem' }}>{unitLabel}</Typography>}
+                                sx={{ display: 'block', my: 0.3 }}
+                            />
+                        );
+                    })}
+                </Box>
+                <Typography variant="caption" color="gray" sx={{ mt: 1, display: 'block' }}>
+                    {selectedIds.length} birim seçildi
+                </Typography>
             </Box>
         case "Table":
             return <TableContainer component={Paper} variant="outlined" sx={{ bgcolor: 'rgba(0,0,0,0.2)', my: 1 }}>
@@ -83,7 +126,7 @@ export default function PluginsTable(props) {
             <Box>
                 <Grid container spacing={2}>
                     {singlePlugin.pluginOptions?.map((opt) => (
-                        <Grid item xs={opt.type === 'Table' || opt.type === 'Label' || opt.type === 'TextArea' ? 12 : 6} key={opt.key}>
+                        <Grid item xs={opt.type === 'Table' || opt.type === 'Label' || opt.type === 'TextArea' || opt.type === 'MultiSelect' ? 12 : 6} key={opt.key}>
                             <PluginOption
                                 pluginData={opt}
                                 parentKey={singlePlugin.key}
