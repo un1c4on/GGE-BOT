@@ -86,7 +86,7 @@ const pluginOptions = Object.assign(structuredClone(
     botConfig.plugins["attack"] ?? {})
 
 pluginOptions.useGamePreset ??= false;
-pluginOptions.presetID ??= "0";
+pluginOptions.presetID ??= "1";
 pluginOptions.maxWaves ??= 3; // Default to 4 waves (index 3)
 
 const eventAutoScalingCamps = require("../../items/eventAutoScalingCamps.json")
@@ -129,13 +129,13 @@ xtHandler.on("cra", (obj, r) => {
 xtHandler.on("cat", (obj, r) => {
     if (r != 0)
         return false
-    
+
     const attackSource = obj.A.M.SA
-    
+
     if (attackSource[0] != type)
         return false
 
-    campRageNeeded = eventAutoScalingCamps.find(obj2 => 
+    campRageNeeded = eventAutoScalingCamps.find(obj2 =>
         attackSource[9] == obj2.eventAutoScalingCampID).playerRageCap
 
     skipTarget(attackSource)
@@ -143,7 +143,7 @@ xtHandler.on("cat", (obj, r) => {
 xtHandler.on("rpr", obj => {
     if (obj.EID != eventID)
         return
-    
+
     let rage = obj.PCRP
 
     if (obj.PCRP >= campRageNeeded) {
@@ -163,8 +163,8 @@ xtHandler.on("pep", obj => {
     if (obj.EID != eventID)
         return
     nomadsPoints = Number(obj.OP[0])
-    
-    if(quit)
+
+    if (quit)
         return
 
     if (nomadsPoints >= pluginOptions.nomadsScoreShutoff) {
@@ -176,7 +176,7 @@ events.on("eventStop", eventInfo => {
     if (eventInfo.EID != eventID)
         return
 
-    if(quit)
+    if (quit)
         return
 
     console.log(`[${name}] Shutting down reason: Event ended.`)

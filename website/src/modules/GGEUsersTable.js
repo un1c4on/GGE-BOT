@@ -99,10 +99,10 @@ export default function GGEUserTable(props) {
                 setNewCastle({ server: '10', game_username: '', game_password: '' });
                 // WebSocket will update the list automatically via backend logic
             } else {
-                setAddError(data.error || "Failed to add castle");
+                setAddError(data.error || t("Failed to add castle"));
             }
         } catch (err) {
-            setAddError("Network error");
+            setAddError(t("Network error"));
         }
     };
 

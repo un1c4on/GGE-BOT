@@ -117,7 +117,20 @@ export const translations = {
         "Max Waves (1-4)": "Max Waves (1-4)", "Waves till chest": "Waves till chest",
         // Labels
         "Horse Settings": "Horse Settings", "Attack Settings": "Attack Settings", "Event Settings": "Event Settings",
-        "Tool/Chest Settings": "Tool/Chest Settings"
+        "Tool/Chest Settings": "Tool/Chest Settings",
+        // New translations for UI
+        "Add Castle": "Add Castle",
+        "Game Castles": "Game Castles",
+        "Remove Selected": "Remove Selected",
+        "Link New Game Account": "Link New Game Account",
+        "Game Username": "Game Username",
+        "Game Password": "Game Password",
+        "Failed to add castle": "Failed to add castle",
+        "Please fill all fields": "Please fill all fields",
+        "Network error": "Network error",
+        "Cancel": "Cancel",
+        "Add": "Add",
+        "Clear Logs": "Clear Logs"
     },
     tr: {
         "Dashboard": "Kontrol Paneli",
@@ -237,7 +250,20 @@ export const translations = {
         "Max Waves (1-4)": "Maks. Dalga (1-4)", "Waves till chest": "Sandık İçin Dalga",
         // Label'lar
         "Horse Settings": "At Ayarları", "Attack Settings": "Saldırı Ayarları", "Event Settings": "Etkinlik Ayarları",
-        "Tool/Chest Settings": "Alet/Sandık Ayarları"
+        "Tool/Chest Settings": "Alet/Sandık Ayarları",
+        // Yeni UI çevirileri
+        "Add Castle": "Kale Ekle",
+        "Game Castles": "Oyun Kaleleri",
+        "Remove Selected": "Seçilenleri Sil",
+        "Link New Game Account": "Yeni Oyun Hesabı Bağla",
+        "Game Username": "Oyun Kullanıcı Adı",
+        "Game Password": "Oyun Şifresi",
+        "Failed to add castle": "Kale eklenemedi",
+        "Please fill all fields": "Lütfen tüm alanları doldurun",
+        "Network error": "Ağ hatası",
+        "Cancel": "İptal",
+        "Add": "Ekle",
+        "Clear Logs": "Günlükleri Temizle"
     }
 };
 

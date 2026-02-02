@@ -58,10 +58,10 @@ async function fortressHit(name, kid, level, options) {
     let pluginOptions = {}
     Object.assign(pluginOptions, options ?? {})
     Object.assign(pluginOptions, botConfig.plugins["attack"] ?? {})
-    
+
     // Defaults for preset options
     pluginOptions.useGamePreset ??= false;
-    pluginOptions.presetID ??= "0";
+    pluginOptions.presetID ??= "1";
     pluginOptions.maxWaves ??= 3; // Default index 3 (4 waves)
 
     let towerTime = new WeakMap()
@@ -71,15 +71,15 @@ async function fortressHit(name, kid, level, options) {
     xtHandler.on("gam", obj => {
         const movementsGAA = Types.GetAllMovements(obj)
         movementsGAA?.movements.forEach(movement => {
-            if(kid != movement.movement.kingdomID)
+            if (kid != movement.movement.kingdomID)
                 return
-            
+
             const targetAttack = movement.movement.targetAttack
 
-            if(type != targetAttack.type)
+            if (type != targetAttack.type)
                 return
 
-            if(movements.find(e => e.x == targetAttack.x && e.y == targetAttack.y))
+            if (movements.find(e => e.x == targetAttack.x && e.y == targetAttack.y))
                 return
 
             movements.push(targetAttack)
@@ -87,12 +87,12 @@ async function fortressHit(name, kid, level, options) {
     })
     movementEvents.on("return", movementInfo => {
         const sourceAttack = movementInfo.movement.movement.sourceAttack
-        if(kid != movementInfo.movement.movement.kingdomID ||
-           type != sourceAttack.type)
-           return
+        if (kid != movementInfo.movement.movement.kingdomID ||
+            type != sourceAttack.type)
+            return
 
         let index = movements.findIndex(e => e.x == sourceAttack.x && e.y == sourceAttack)
-        if(index == -1)
+        if (index == -1)
             return
         movements.splice(index, 1)
     })
@@ -120,15 +120,15 @@ async function fortressHit(name, kid, level, options) {
                 const timeSinceEpoch = Date.now()
                 for (let i = 0; i < sortedAreaInfo.length; i++) {
                     const areaInfo = sortedAreaInfo[i]
-                    
-                    if(movements.find(e => e.x == areaInfo.x && e.y == areaInfo.y))
+
+                    if (movements.find(e => e.x == areaInfo.x && e.y == areaInfo.y))
                         continue
 
                     let time = towerTime.get(areaInfo) - timeSinceEpoch
                     if (time > 0)
                         continue
 
-                    Object.assign(areaInfo, 
+                    Object.assign(areaInfo,
                         (await ClientCommands.getAreaInfo(
                             kid, areaInfo.x, areaInfo.y, areaInfo.x, areaInfo.y)()).areaInfo[0])
                     towerTime.set(areaInfo, timeSinceEpoch + areaInfo.extraData[2] * 1000)
@@ -166,7 +166,7 @@ async function fortressHit(name, kid, level, options) {
                             continue
 
                         if (unitInfo.fightType == 0) {
-                            if(kid == KingdomID.firePeaks && 
+                            if (kid == KingdomID.firePeaks &&
                                 unitInfo.wodID == 277)
                                 continue
                             if (unitInfo.role == "melee")
@@ -187,12 +187,10 @@ async function fortressHit(name, kid, level, options) {
                     if (allTroopCount < minTroopCount)
                         throw "NO_MORE_TROOPS"
 
-                    attackInfo.A.forEach((wave, i) => {
-                        if(i > 2 && kid != KingdomID.firePeaks)
-                            return
-                        if(i > 4 && kid == KingdomID.firePeaks)
-                            return
-                        
+                    attackInfo.A.forEach((wave, waveIndex) => {
+                        // Use maxWaves from user selection instead of hardcoded limits
+                        if (waveIndex >= maxWaves) return;
+
                         const maxTroopFlank = getAmountSoldiersFlank(level)
 
                         let maxTroops = maxTroopFlank
@@ -225,15 +223,15 @@ async function fortressHit(name, kid, level, options) {
                         return false
                     return true
                 })
-                return {...obj, result: r}
+                return { ...obj, result: r }
             })
             if (!attackInfo) {
                 freeCommander(commander.lordID)
                 return false
             }
-            if(attackInfo.result != 0) 
+            if (attackInfo.result != 0)
                 throw err[attackInfo.result]
-            
+
             console.info(`[${name}] Hitting target C${attackInfo.AAM.UM.L.VIS + 1} ${attackInfo.AAM.M.TA[1]}:${attackInfo.AAM.M.TA[2]} ${pretty(Math.round(1000000000 * Math.abs(Math.max(0, attackInfo.AAM.M.TT - attackInfo.AAM.M.PT))), 's') + " till impact"}`)
             return true
         } catch (e) {
@@ -303,20 +301,20 @@ async function fortressHit(name, kid, level, options) {
             towerTime.set(ai, timeSinceEpoch + ai.extraData[2] * 1000))
 
         sortedAreaInfo = sortedAreaInfo.concat(areaInfo)
-        
+
         while (await sendHit());
     }
 
     while (true) {
         let minimumTimeTillHit = Infinity
         sortedAreaInfo.forEach(e => {
-            if(!movements.find(a => a.x == e.x && a.y == e.y))
+            if (!movements.find(a => a.x == e.x && a.y == e.y))
                 minimumTimeTillHit = Math.min(minimumTimeTillHit, towerTime.get(e))
         })
         let time = (Math.max(0, minimumTimeTillHit - Date.now()))
         console.info(`[${name}] Waiting ${Math.round(time / 1000)} for next fortress hit`)
         await new Promise(r => setTimeout(r, time).unref())
-        
+
         while (await sendHit());
     }
 }

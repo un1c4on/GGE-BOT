@@ -134,7 +134,7 @@ const pluginOptions =
     botConfig.plugins[require('path').basename(__filename).slice(0, -3)] ?? {}
 
 pluginOptions.useGamePreset ??= false;
-pluginOptions.presetID ??= "0";
+pluginOptions.presetID ??= "1";
 // Default to 1 wave (index 0) if not set
 pluginOptions.maxWaves = pluginOptions.maxWaves !== undefined ? Number(pluginOptions.maxWaves) : 0;
 

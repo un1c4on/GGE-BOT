@@ -249,8 +249,33 @@ webSocket.onmessage = async (e) => {
                 break
             default:
                 if (data[2] != 0 && !(data[0] == "lli" && data[2] == 453)) {
-                    console.warn(`Got result ${err[data[2]] ? err[data[2]] : data[2]} from ${data[0]}`)
-                    errorCount++
+                    const errorCode = err[data[2]] ? err[data[2]] : data[2];
+
+                    // User-friendly error messages (Turkish/English)
+                    const errorMessages = {
+                        'MISSING_UNITS': '⚠️  Envanterde yeterli asker yok / Not enough units in inventory - Plugin devam ediyor / Plugin continues',
+                        'MOVEMENT_HAS_NO_UNITS': '❌ Saldırıda asker yok / No units in attack - Plugin durduruldu / Plugin stopped',
+                        'ATTACK_TOO_MANY_UNITS': '⚠️  Çok fazla asker gönderilmeye çalışıldı / Too many units attempted - Lütfen preset ayarlarını kontrol edin / Please check preset settings',
+                        'LORD_IS_USED': '⚠️  Komutan kullanımda / Commander in use - Tekrar denenecek / Will retry',
+                        'NO_MORE_TROOPS': '⚠️  Yeterli asker kalmadı / Insufficient troops remaining',
+                        'INVALID_PRESET_DATA': '❌ Geçersiz preset verisi / Invalid preset data'
+                    };
+
+                    if (errorMessages[errorCode]) {
+                        console.warn(`[${data[0]}] ${errorMessages[errorCode]}`);
+
+                        // Stop bot only on MOVEMENT_HAS_NO_UNITS (critical error)
+                        if (errorCode === 'MOVEMENT_HAS_NO_UNITS') {
+                            console.error(`🛑 Plugin kritik hata nedeniyle durduruluyor / Plugin stopping due to critical error: ${errorCode}`);
+                            setTimeout(() => {
+                                parentPort.postMessage([ActionType.KillBot]);
+                            }, 3000);
+                            return;
+                        }
+                    } else {
+                        console.warn(`Got result ${errorCode} from ${data[0]}`);
+                    }
+                    errorCount++;
                 }
             case "core_pol":
             case "rlu":

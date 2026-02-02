@@ -33,5 +33,6 @@
 	"Successfully saved": "Changes saved successfully!",
 	"started": "started",
 	"gameAccountSessionAlreadyInUse": "gameAccountSessionAlreadyInUse",
-	"subscriptionExpired": "subscriptionExpired"
+	"subscriptionExpired": "subscriptionExpired",
+	"invalidCredentials": "invalidCredentials"
 }

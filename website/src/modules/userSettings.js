@@ -66,6 +66,11 @@ export default function UserSettings(props) {
         fetchData();
     }, [props.selectedUser.server]);
 
+    // Sync plugins state when selectedUser.plugins changes (from sidebar toggle)
+    React.useEffect(() => {
+        setPlugins(props.selectedUser.plugins || {});
+    }, [props.selectedUser.plugins]);
+
     const handleSave = () => {
         const activePlugins = {};
         Object.entries(plugins).forEach(([key, val]) => {

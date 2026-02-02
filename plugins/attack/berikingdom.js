@@ -99,7 +99,7 @@ pluginOptions.attackLeft ??= true
 pluginOptions.attackMiddle ??= true
 pluginOptions.attackRight ??= true
 pluginOptions.useGamePreset ??= false
-pluginOptions.presetID ??= "0"
+pluginOptions.presetID ??= "1"
 pluginOptions.maxWaves ??= 3
 
 const kid = KingdomID.berimond

@@ -64,13 +64,6 @@ if (isMainThread) {
                 key: "attackCourtyard",
                 default: true
             },
-            {
-                type: "Text",
-                label: "Max Waves",
-                description: "Maximum number of attack waves",
-                key: "attackWaves",
-                default: ""
-            },
             ...getPresetOptions()
         ]
     }

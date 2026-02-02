@@ -461,6 +461,10 @@ async function start() {
     if (worker) { botMap.delete(id); worker.terminate() }
   }
 
+  // SUNUCU BAŞLANGICINDA TÜM BOTLARI DURDUR (Auto-start disabled)
+  // Set all game accounts to inactive so "Start" button is false in UI
+  await GameAccount.update({ is_active: false }, { where: {} });
+
   // SUNUCU BAŞLANGICINDA TÜM BOTLARI ÇEK (Admin/Sistem yetkisiyle)
   const allGameAccounts = await GameAccount.findAll({ include: [BotConfig, DBUser] });
   const allUsers = allGameAccounts.map(e => new User(e.get({ plain: true })));

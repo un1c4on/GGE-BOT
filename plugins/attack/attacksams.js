@@ -107,7 +107,7 @@ const pluginOptions = Object.assign(structuredClone(
     botConfig.plugins["attack"] ?? {})
 
 pluginOptions.useGamePreset ??= false;
-pluginOptions.presetID ??= "0";
+pluginOptions.presetID ??= "1";
 pluginOptions.maxWaves ??= 3; // Default to 4 waves (index 3)
 pluginOptions.useTimeSkips ??= false;
 

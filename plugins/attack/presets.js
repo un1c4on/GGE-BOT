@@ -14,18 +14,28 @@ function getPresetOptions() {
             default: false
         },
         {
-            type: "Text",
-            label: "Preset ID (Slot Number)",
-            description: "The Slot ID of the preset to use (e.g., 0, 1, 2...)",
+            type: "Select",
+            label: "Preset Slot",
+            description: "Select which preset slot to use (1-8)",
             key: "presetID",
-            default: "0"
+            default: 0,
+            selection: [
+                "Slot 1",
+                "Slot 2",
+                "Slot 3",
+                "Slot 4",
+                "Slot 5",
+                "Slot 6",
+                "Slot 7",
+                "Slot 8"
+            ]
         },
         {
             type: "Select",
             label: "Max Waves",
             key: "maxWaves",
-            default: 3, // Index 3 corresponds to "4 Waves"
-            selection: ["1 Wave", "2 Waves", "3 Waves", "4 Waves"]
+            default: 3,
+            selection: ["1", "2", "3", "4"]
         }
     ];
 }
@@ -40,6 +50,7 @@ function getPresetOptions() {
 function applyPreset(attackInfo, presetID, maxWaves) {
     if (!attackInfo || !attackInfo.A) return { success: false, error: "Invalid attackInfo" };
 
+    // Backend uses 0-based IDs: Slot 1 = ID 0, Slot 2 = ID 1, etc.
     const pid = Number(presetID);
     const preset = playerInfo.presets ? playerInfo.presets.find(p => p.id == pid) : null;
 
@@ -61,7 +72,7 @@ function applyPreset(attackInfo, presetID, maxWaves) {
 
         // Clear existing default setup in attackInfo for the waves we are about to fill
         // Note: We clear all because the preset might assume a clean slate
-        attackInfo.A.forEach(w => { w.L.U=[]; w.L.T=[]; w.M.U=[]; w.M.T=[]; w.R.U=[]; w.R.T=[]; });
+        attackInfo.A.forEach(w => { w.L.U = []; w.L.T = []; w.M.U = []; w.M.T = []; w.R.U = []; w.R.T = []; });
 
         // Mapping: [T_Mid, T_Left, T_Right, U_Mid, U_Left, U_Right]
         // Index 0-2: Tools
@@ -78,13 +89,13 @@ function applyPreset(attackInfo, presetID, maxWaves) {
             // The previous code in berikingdom.js only applied it to `waveIdx = 0`. 
             // However, usually presets in GGE are "Wave independent" templates or specific wave setups.
             // If the user wants 4 waves of this preset, we should copy it to all waves.
-            
+
             // For now, let's replicate the previous logic: It seemed to only fill wave 0.
             // WAIT, usually a preset is applied to ALL available waves in an auto-attacker context unless specified.
             // Let's iterate over `maxWaves` and apply this template.
-            
+
             for (let waveIdx = 0; waveIdx < maxWaves; waveIdx++) {
-                 // 0-2: Tools, 3-5: Units
+                // 0-2: Tools, 3-5: Units
                 const isUnitGroup = index >= 3;
                 const sideIndex = index % 3;
                 const sideKey = sides[sideIndex];
@@ -92,7 +103,7 @@ function applyPreset(attackInfo, presetID, maxWaves) {
                 // slotData: [id, count, id, count...]
                 for (let k = 0; k < slotData.length; k += 2) {
                     const id = slotData[k];
-                    const count = slotData[k+1];
+                    const count = slotData[k + 1];
                     if (!id || !count) continue;
 
                     const itemDef = units.find(u => u.wodID == id);
@@ -101,7 +112,7 @@ function applyPreset(attackInfo, presetID, maxWaves) {
                     // Verify if item matches the group type (Unit vs Tool) just to be safe, 
                     // though the index usually dictates it.
                     const isItemUnit = itemDef.role === 'melee' || itemDef.role === 'ranged';
-                    
+
                     // If we are in tool slots (0-2) but item is unit, or vice versa, skip?
                     // The previous logic didn't strictly enforce index-based type checking, it checked the itemDef.
                     // Let's stick to itemDef.
@@ -112,18 +123,18 @@ function applyPreset(attackInfo, presetID, maxWaves) {
                     const slotLimit = isItemUnit ? 1 : 10; // 1 slot for units, 10 for tools
 
                     let placed = false;
-                    for(let s=0; s < slotLimit; s++) {
-                            if(!targetArr[s]) { 
-                                targetArr[s] = [id, count]; 
-                                placed = true; 
-                                break; 
-                            }
+                    for (let s = 0; s < slotLimit; s++) {
+                        if (!targetArr[s]) {
+                            targetArr[s] = [id, count];
+                            placed = true;
+                            break;
+                        }
                     }
                 }
             }
         });
 
-        return { success: true };
+        return { success: true, presetName: preset.name };
 
     } catch (e) {
         console.error(`[Presets] Error applying preset:`, e);
