@@ -294,18 +294,44 @@ const transferTroopsLogic = async () => {
                 if (sendTroops.length > 0) {
                     console.log(`[${name}] Sending Transfer from K${sourceKingdomID}: [${logDetails.join(", ")}]`)
                     sendXT("kut", JSON.stringify({ SCID: sourceCastle.areaID, SKID: sourceKingdomID, TKID: kid, CID: -1, A: sendTroops }))
-                    const [kutResult, kutCode] = await waitForResult("kut", 10000);
+                    let [kutResult, kutCode] = await waitForResult("kut", 10000);
+
+                    // If transfer blocked, try to skip cooldown and retry
+                    if (kutCode !== 0 && pluginOptions.useTimeSkips) {
+                        console.log(`[${name}] Transfer blocked. Checking cooldown...`);
+
+                        const kpi = await getKingdomInfoList();
+                        let transferInfo = kpi.troopTransferList.find(e => e.kingdomID == kid);
+
+                        if (transferInfo && transferInfo.remainingTime > 0) {
+                            console.log(`[${name}] Found cooldown: ${transferInfo.remainingTime}s`);
+                            console.log(`[${name}] Skipping cooldown with MS5...`);
+                            await ClientCommands.getMinuteSkipKingdom("MS5", kid, KingdomSkipType.sendTroops)();
+                            await sleep(1000);
+
+                                // Retry transfer
+                                console.log(`[${name}] Retrying transfer...`);
+                                sendXT("kut", JSON.stringify({ SCID: sourceCastle.areaID, SKID: sourceKingdomID, TKID: kid, CID: -1, A: sendTroops }))
+                                const retryResult = await waitForResult("kut", 10000);
+                                kutCode = retryResult[1];
+
+                            if (kutCode !== 0) {
+                                console.log(`[${name}] Still blocked: Too many active movements (attacks/transfers). Waiting for some to complete...`);
+                            }
+                        }
+                    }
 
                     if (kutCode !== 0) {
-                        console.log(`[${name}] Transfer skipped: Too many movements. Will retry in 10m.`);
+                        console.log(`[${name}] Transfer skipped. Will retry in next interval.`);
                         return;
                     }
 
                     if (pluginOptions.useTimeSkips) {
-                        console.log(`[${name}] Waiting 2s before skip...`)
+                        console.log(`[${name}] Transfer successful! Skipping travel time...`)
                         await sleep(2000);
                         console.log(`[${name}] Sending MS5 Skip...`)
-                        await ClientCommands.getMinuteSkipKingdom("MS5", kid, KingdomSkipType.sendTroops)();
+                        const skipResult = await ClientCommands.getMinuteSkipKingdom("MS5", kid, KingdomSkipType.sendTroops)();
+                        console.log(`[${name}] Travel skip completed.`);
                     }
                 }
             } else {
