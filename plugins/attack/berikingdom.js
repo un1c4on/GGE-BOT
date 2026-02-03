@@ -44,6 +44,13 @@ if (isMainThread) {
                 key: "attackRight",
                 default: true
             },
+            {
+                type: "Checkbox",
+                label: "Attack Courtyard",
+                description: "Enable courtyard reinforcement attacks",
+                key: "attackCourtyard",
+                default: true
+            },
             { type: "Label", label: "Horse Settings" },
             {
                 type: "Checkbox",
@@ -91,9 +98,16 @@ pluginOptions.useTimeSkips ??= true
 pluginOptions.attackLeft ??= true
 pluginOptions.attackMiddle ??= true
 pluginOptions.attackRight ??= true
+pluginOptions.attackCourtyard ??= true
 pluginOptions.useGamePreset ??= false
 pluginOptions.presetID ??= 0
 pluginOptions.maxWaves ??= 3
+
+// Configuration warning for high wave counts with tool-only presets
+if (pluginOptions.useGamePreset && pluginOptions.maxWaves > 2) {
+    console.warn(`[${name}] ⚠️ Using presets with ${pluginOptions.maxWaves + 1} waves: Tool-only presets may trigger Error 313 (ATTACK_TOO_MANY_UNITS) due to auto-fill allocation.`);
+    console.warn(`[${name}] ⚠️ Consider reducing maxWaves or using presets with troops pre-defined.`);
+}
 
 const kid = KingdomID.berimond
 const eventID = 3
@@ -141,6 +155,42 @@ function countTotalUnits(attackInfo) {
         });
     }
     return total;
+}
+
+/**
+ * Calculate server hard limit for total units in attack
+ * @param {Number} playerLevel - Player's level
+ * @param {Number} targetLevel - Target's wall level
+ * @param {Number} waveCount - Number of attack waves
+ * @param {Object} commanderStats - Commander stats (including relic bonuses)
+ * @returns {Number} Maximum safe total units (with 10% safety margin)
+ */
+function getServerHardLimit(playerLevel, targetLevel, waveCount, commanderStats) {
+    // Base calculations from attack.js formulas
+    const getMaxAttackers = (level) => level <= 69 ? Math.min(260, 5 * level + 8) : 320;
+    const baseFlank = Math.floor(Math.ceil(0.2 * getMaxAttackers(targetLevel)));
+    const baseFront = Math.floor(Math.ceil(getMaxAttackers(targetLevel) - 2 * baseFlank));
+
+    // Apply commander relic bonuses
+    const relicFlankBonus = (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100;
+    const relicFrontBonus = (commanderStats.relicAttackUnitAmountFront ?? 0) / 100;
+
+    const maxFlank = Math.floor(baseFlank * (1 + relicFlankBonus));
+    const maxFront = Math.floor(baseFront * (1 + relicFrontBonus));
+
+    // Per-wave theoretical max (2 flanks + 1 front per wave)
+    const perWaveTheoretical = (maxFlank * 2) + maxFront;
+
+    // Courtyard theoretical max
+    const courtyardTheoretical = Math.round(20 * Math.sqrt(playerLevel) + 50 + 20 * targetLevel);
+
+    // Total theoretical maximum
+    const totalTheoretical = (perWaveTheoretical * waveCount) + courtyardTheoretical;
+
+    // Apply 10% safety margin to account for server-side variance
+    const safeLimit = Math.floor(totalTheoretical * 0.90);
+
+    return safeLimit;
 }
 
 /**
@@ -270,7 +320,7 @@ const startLogic = async () => {
     transferTroopsLogic();
     syncInventoryLogic();
 
-    setInterval(transferTroopsLogic, 15 * 60 * 1000); // Every 15m
+    setInterval(transferTroopsLogic, 10 * 60 * 1000); // Every 10m
     setInterval(syncInventoryLogic, 30 * 1000);       // Every 30s
 
     await getKingdomInfoList();
@@ -307,8 +357,8 @@ const startLogic = async () => {
             let totalStrong = availableTroops.reduce((a, b) => a + b[1], 0);
 
             if (totalStrong < minTroopCount) {
-                console.log(`[${name}] Not enough troops (${totalStrong}/${minTroopCount}). Waiting 15s...`)
-                await sleep(15000);
+                console.log(`[${name}] Not enough troops (${totalStrong}/${minTroopCount}). Checking inventory in 5s...`)
+                await sleep(5000);
                 continue;
             }
 
@@ -349,9 +399,11 @@ const startLogic = async () => {
                     // Check if preset assigned any troops
                     let presetTroopCount = countTotalUnits(attackInfo);
 
-                    if (presetTroopCount <= 0) {
-                        // Preset has only tools, no units - auto-fill with available troops
-                        console.log(`[${name}] Preset has no troops, auto-filling with available units...`);
+                    // Always auto-fill empty slots (even if preset has some troops)
+                    if (true) {
+                        if (presetTroopCount <= 0) {
+                            console.log(`[${name}] Preset has no troops, auto-filling with available units...`);
+                        }
 
                         // Refresh inventory data
                         const freshSourceCastle = (await ClientCommands.getDetailedCastleList()())
@@ -383,8 +435,6 @@ const startLogic = async () => {
                         attackerRangeTroops.forEach(e => allTroopCount += e[1])
                         attackerMeleeTroops.forEach(e => allTroopCount += e[1])
 
-                        console.log(`[${name}] 📊 Inventory: ${allTroopCount} troops (${attackerMeleeTroops.length} melee types, ${attackerRangeTroops.length} ranged types)`)
-
                         if (allTroopCount < minTroopCount) {
                             console.warn(`[${name}] Not enough troops (${allTroopCount}/${minTroopCount})`);
                             return { result: "NO_MORE_TROOPS" };
@@ -402,7 +452,7 @@ const startLogic = async () => {
                         attackInfo.A.forEach((wave, waveIndex) => {
                             if (waveIndex >= waveCount) return;
 
-                            // Only recreate unit slots, keep existing tool slots
+                            // Only recreate unit slots if completely missing
                             if (wave.L.U.length === 0) {
                                 setupWave([0, 13], wave.L.U);
                             }
@@ -429,10 +479,32 @@ const startLogic = async () => {
                             let rawFlank = Math.floor(getAmountSoldiersFlank(70) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100)
                             let rawFront = Math.floor(getAmountSoldiersFront(70) * 1 + (commanderStats.relicAttackUnitAmountFront ?? 0) / 100)
 
-                            const maxTroopFlank = Math.max(0, rawFlank - (rawFlank > 15 ? 5 : 1))
-                            const maxTroopFront = Math.max(0, rawFront - (rawFront > 15 ? 5 : 1))
+                            const maxTroopFlank = Math.max(0, rawFlank - (rawFlank > 15 ? 10 : 1))
+                            const maxTroopFront = Math.max(0, rawFront - (rawFront > 15 ? 10 : 1))
+
+                            // Diagnostic logging for wave limits
+                            if (waveIndex === 0) {
+                                const totalRelicBonus = (commanderStats.relicAttackUnitAmountFlank ?? 0) + (commanderStats.relicAttackUnitAmountFront ?? 0);
+                                if (totalRelicBonus > 50) {
+                                    console.warn(`[${name}] ⚠️ High relic bonuses detected: Flank +${commanderStats.relicAttackUnitAmountFlank ?? 0}%, Front +${commanderStats.relicAttackUnitAmountFront ?? 0}%`);
+                                }
+                            }
 
                             if (doLeft) {
+                                // Check if flank has tools but no troops
+                                const hasTools = wave.L.T && wave.L.T.some(slot => slot && slot[0] !== -1 && slot[1] > 0);
+                                const hasTroops = wave.L.U && wave.L.U.some(slot => slot && slot[0] !== -1 && slot[1] > 0);
+
+                                // If has tools but no troops, reset slots for auto-fill
+                                if (hasTools && !hasTroops && wave.L.U.length > 0) {
+                                    wave.L.U.forEach(slot => {
+                                        if (slot) {
+                                            slot[0] = -1;
+                                            slot[1] = 0;
+                                        }
+                                    });
+                                }
+
                                 let currentMax = maxTroopFlank;
                                 wave.L.U.forEach((unitSlot, i) => {
                                     if (currentMax <= 0) return;
@@ -443,6 +515,20 @@ const startLogic = async () => {
                             }
 
                             if (doRight) {
+                                // Check if flank has tools but no troops
+                                const hasTools = wave.R.T && wave.R.T.some(slot => slot && slot[0] !== -1 && slot[1] > 0);
+                                const hasTroops = wave.R.U && wave.R.U.some(slot => slot && slot[0] !== -1 && slot[1] > 0);
+
+                                // If has tools but no troops, reset slots for auto-fill
+                                if (hasTools && !hasTroops && wave.R.U.length > 0) {
+                                    wave.R.U.forEach(slot => {
+                                        if (slot) {
+                                            slot[0] = -1;
+                                            slot[1] = 0;
+                                        }
+                                    });
+                                }
+
                                 let currentMax = maxTroopFlank;
                                 wave.R.U.forEach((unitSlot, i) => {
                                     if (currentMax <= 0) return;
@@ -453,6 +539,20 @@ const startLogic = async () => {
                             }
 
                             if (doMiddle) {
+                                // Check if middle has tools but no troops
+                                const hasTools = wave.M.T && wave.M.T.some(slot => slot && slot[0] !== -1 && slot[1] > 0);
+                                const hasTroops = wave.M.U && wave.M.U.some(slot => slot && slot[0] !== -1 && slot[1] > 0);
+
+                                // If has tools but no troops, reset slots for auto-fill
+                                if (hasTools && !hasTroops && wave.M.U.length > 0) {
+                                    wave.M.U.forEach(slot => {
+                                        if (slot) {
+                                            slot[0] = -1;
+                                            slot[1] = 0;
+                                        }
+                                    });
+                                }
+
                                 let currentMax = maxTroopFront;
                                 wave.M.U.forEach((unitSlot, i) => {
                                     if (currentMax <= 0) return;
@@ -463,18 +563,24 @@ const startLogic = async () => {
                             }
                         })
 
-                        // Fill courtyard
-                        let maxTroops = getMaxUnitsInReinforcementWave(playerInfo.level, 70);
-                        attackInfo.RW.forEach((unitSlot, i) => {
-                            if (maxTroops <= 0) return;
-                            let attacker = i & 1 ?
-                                (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops) :
-                                (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops)
+                        // Fill courtyard (if enabled)
+                        if (pluginOptions.attackCourtyard !== false) {
+                            let maxTroops = getMaxUnitsInReinforcementWave(playerInfo.level, 70);
+                            attackInfo.RW.forEach((unitSlot, i) => {
+                                if (maxTroops <= 0) return;
+                                let attacker = i & 1 ?
+                                    (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops) :
+                                    (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops)
 
-                            let assigned = assignUnit(unitSlot, attacker,
-                                Math.floor(maxTroops / 2));
-                            maxTroops -= assigned;
-                        });
+                                let assigned = assignUnit(unitSlot, attacker,
+                                    Math.floor(maxTroops / 2));
+                                maxTroops -= assigned;
+                            });
+                        } else {
+                            // Clear courtyard array when disabled
+                            attackInfo.RW = [];
+                        }
+
                     }
                 } else {
                     // === MANUAL MODE (No Preset) ===
@@ -524,8 +630,8 @@ const startLogic = async () => {
                         let rawFlank = Math.floor(getAmountSoldiersFlank(70) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100)
                         let rawFront = Math.floor(getAmountSoldiersFront(70) * 1 + (commanderStats.relicAttackUnitAmountFront ?? 0) / 100)
 
-                        const maxTroopFlank = Math.max(0, rawFlank - (rawFlank > 15 ? 5 : 1))
-                        const maxTroopFront = Math.max(0, rawFront - (rawFront > 15 ? 5 : 1))
+                        const maxTroopFlank = Math.max(0, rawFlank - (rawFlank > 15 ? 10 : 1))
+                        const maxTroopFront = Math.max(0, rawFront - (rawFront > 15 ? 10 : 1))
 
                         const maxToolsFlank = getTotalAmountToolsFlank(70, 0)
                         const maxToolsFront = getTotalAmountToolsFront(70)
@@ -567,18 +673,83 @@ const startLogic = async () => {
                         }
                     });
 
-                    // Fill courtyard
-                    let maxTroops = getMaxUnitsInReinforcementWave(playerInfo.level, 70);
-                    attackInfo.RW.forEach((unitSlot, i) => {
-                        if (maxTroops <= 0) return;
-                        let attacker = i & 1 ?
-                            (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops) :
-                            (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops)
+                    // Fill courtyard (if enabled)
+                    if (pluginOptions.attackCourtyard !== false) {
+                        let maxTroops = getMaxUnitsInReinforcementWave(playerInfo.level, 70);
+                        attackInfo.RW.forEach((unitSlot, i) => {
+                            if (maxTroops <= 0) return;
+                            let attacker = i & 1 ?
+                                (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops) :
+                                (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops)
 
-                        let assigned = assignUnit(unitSlot, attacker,
-                            Math.floor(maxTroops / 2));
-                        maxTroops -= assigned;
-                    })
+                            let assigned = assignUnit(unitSlot, attacker,
+                                Math.floor(maxTroops / 2));
+                            maxTroops -= assigned;
+                        })
+                    } else {
+                        // Clear courtyard array when disabled
+                        attackInfo.RW = [];
+                    }
+                }
+
+                // === GLOBAL UNIT LIMIT VALIDATION ===
+                const commanderStats = getCommanderStats(commander);
+                const serverHardLimit = getServerHardLimit(playerInfo.level, 70, maxWaves, commanderStats);
+                let currentTotalUnits = countTotalUnits(attackInfo);
+
+                if (currentTotalUnits > serverHardLimit) {
+                    console.warn(`[${name}] ⚠️ Total units (${currentTotalUnits}) exceeds server limit (${serverHardLimit}). Reducing allocation...`);
+
+                    const excessUnits = currentTotalUnits - serverHardLimit;
+                    let unitsToReduce = excessUnits;
+
+                    // Strategy 1: Reduce courtyard first (least impact on attack effectiveness)
+                    let courtyardReduction = 0;
+                    for (let i = attackInfo.RW.length - 1; i >= 0 && unitsToReduce > 0; i--) {
+                        const slot = attackInfo.RW[i];
+                        if (slot && slot[1] > 0) {
+                            const reduction = Math.min(slot[1], unitsToReduce);
+                            slot[1] -= reduction;
+                            unitsToReduce -= reduction;
+                            courtyardReduction += reduction;
+                            if (slot[1] === 0) slot[0] = -1; // Clear empty slot
+                        }
+                    }
+
+                    if (courtyardReduction > 0) {
+                        console.log(`[${name}] 📉 Reduced courtyard by ${courtyardReduction} units`);
+                    }
+
+                    // Strategy 2: If still over, reduce wave allocations (back to front, right to left)
+                    if (unitsToReduce > 0) {
+                        let waveReduction = 0;
+                        for (let waveIdx = attackInfo.A.length - 1; waveIdx >= 0 && unitsToReduce > 0; waveIdx--) {
+                            const wave = attackInfo.A[waveIdx];
+                            if (waveIdx >= maxWaves) continue;
+
+                            // Reduce in order: Right -> Middle -> Left
+                            for (const side of ['R', 'M', 'L']) {
+                                if (!wave[side] || !wave[side].U) continue;
+                                for (let slotIdx = wave[side].U.length - 1; slotIdx >= 0 && unitsToReduce > 0; slotIdx--) {
+                                    const slot = wave[side].U[slotIdx];
+                                    if (slot && slot[1] > 0) {
+                                        const reduction = Math.min(slot[1], unitsToReduce);
+                                        slot[1] -= reduction;
+                                        unitsToReduce -= reduction;
+                                        waveReduction += reduction;
+                                        if (slot[1] === 0) slot[0] = -1; // Clear empty slot
+                                    }
+                                }
+                            }
+                        }
+
+                        if (waveReduction > 0) {
+                            console.log(`[${name}] 📉 Reduced waves by ${waveReduction} units`);
+                        }
+                    }
+
+                    currentTotalUnits = countTotalUnits(attackInfo);
+                    console.log(`[${name}] ✅ Final unit count after reduction: ${currentTotalUnits}/${serverHardLimit}`);
                 }
 
                 // === FINAL VALIDATION ===
@@ -606,14 +777,25 @@ const startLogic = async () => {
                     freeCommander(commander.lordID);
                     sendXT("dcl", JSON.stringify({ CD: 1 }));
                     await sleep(60000);
+                } else if (attackInfoResult.result == 313) {
+                    console.error(`[${name}] ❌ Error 313: ATTACK_TOO_MANY_UNITS`);
+                    console.error(`[${name}] This error indicates the total unit count exceeded server limits.`);
+                    console.error(`[${name}] Troubleshooting steps:`);
+                    console.error(`[${name}]   1. Reduce maxWaves in plugin settings`);
+                    console.error(`[${name}]   2. Disable attackCourtyard if you only need wave attacks`);
+                    console.error(`[${name}]   3. Check commander relic bonuses (high bonuses increase limits but may cause variance)`);
+                    console.error(`[${name}]   4. If using tool-only presets, ensure auto-fill isn't over-allocating`);
+                    console.error(`[${name}]   5. Consider using presets with troops pre-defined instead of relying on auto-fill`);
+                    freeCommander(commander.lordID);
+                    await sleep(30000); // 30s cooldown (config issue, don't retry immediately)
                 } else if (attackInfoResult.result == "NO_TARGET") {
                     console.log(`[${name}] No target available. Waiting 5s...`)
                     freeCommander(commander.lordID);
                     await sleep(5000);
                 } else if (attackInfoResult.result == "NO_MORE_TROOPS") {
-                    console.warn(`[${name}] 🛑 Not enough troops. Waiting 10m...`)
+                    console.warn(`[${name}] 🛑 Not enough troops. Checking inventory in 5s...`)
                     freeCommander(commander.lordID);
-                    await sleep(10 * 60 * 1000);
+                    await sleep(5000);
                 } else if (attackInfoResult.result == "NO_TROOPS_ASSIGNED") {
                     console.warn(`[${name}] No troops assigned. Waiting 5s...`)
                     freeCommander(commander.lordID);
@@ -624,7 +806,7 @@ const startLogic = async () => {
                 }
             } else if (attackInfoResult && attackInfoResult.AAM) {
                 const soldierCount = attackInfoResult.soldierCount || 0;
-                console.info(`[${name}] Attack sent! Lord ${commander.lordID} | Troops: ${soldierCount} | Setup: ${duration}s`)
+                console.info(`[${name}] Attack sent! Commander #${commander.lordPosition + 1} | Troops: ${soldierCount} | Setup: ${duration}s`)
                 useCommander(commander.lordID)
             } else {
                 freeCommander(commander.lordID)
