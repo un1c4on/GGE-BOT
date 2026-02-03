@@ -18,10 +18,17 @@ if (isMainThread) {
             { type: "Label", label: "Attack Settings" },
             {
                 type: "Checkbox",
-                label: "Auto Transfer Troops (Every 15m)",
+                label: "Auto Transfer Troops",
                 description: "Automatically send troops from Kingdom 3",
                 key: "transferWeakTroops",
                 default: true
+            },
+            {
+                type: "Text",
+                label: "Transfer Aralığı (dakika)",
+                description: "Krallık 3'ten asker transferi aralığı (0 = kapalı)",
+                key: "transferInterval",
+                default: "10"
             },
             {
                 type: "Checkbox",
@@ -50,6 +57,13 @@ if (isMainThread) {
                 description: "Enable courtyard reinforcement attacks",
                 key: "attackCourtyard",
                 default: true
+            },
+            {
+                type: "Text",
+                label: "Boş Slota Maksimum Asker",
+                description: "Preset'te boş slotlara otomatik doldurulacak maksimum asker sayısı (0 = limitsiz)",
+                key: "maxAutoFillTroops",
+                default: "0"
             },
             { type: "Label", label: "Horse Settings" },
             {
@@ -94,11 +108,13 @@ const pluginOptions = botConfig.plugins[require('path').basename(__filename).sli
 pluginOptions.useFeather ??= false
 pluginOptions.useCoin ??= false
 pluginOptions.transferWeakTroops ??= true
+pluginOptions.transferInterval ??= "10"
 pluginOptions.useTimeSkips ??= true
 pluginOptions.attackLeft ??= true
 pluginOptions.attackMiddle ??= true
 pluginOptions.attackRight ??= true
 pluginOptions.attackCourtyard ??= true
+pluginOptions.maxAutoFillTroops ??= "0"
 pluginOptions.useGamePreset ??= false
 pluginOptions.presetID ??= 0
 pluginOptions.maxWaves ??= 3
@@ -278,7 +294,12 @@ const transferTroopsLogic = async () => {
                 if (sendTroops.length > 0) {
                     console.log(`[${name}] Sending Transfer from K${sourceKingdomID}: [${logDetails.join(", ")}]`)
                     sendXT("kut", JSON.stringify({ SCID: sourceCastle.areaID, SKID: sourceKingdomID, TKID: kid, CID: -1, A: sendTroops }))
-                    await waitForResult("kut", 10000);
+                    const [kutResult, kutCode] = await waitForResult("kut", 10000);
+
+                    if (kutCode !== 0) {
+                        console.log(`[${name}] Transfer skipped: Too many movements. Will retry in 10m.`);
+                        return;
+                    }
 
                     if (pluginOptions.useTimeSkips) {
                         console.log(`[${name}] Waiting 2s before skip...`)
@@ -320,8 +341,9 @@ const startLogic = async () => {
     transferTroopsLogic();
     syncInventoryLogic();
 
-    setInterval(transferTroopsLogic, 10 * 60 * 1000); // Every 10m
-    setInterval(syncInventoryLogic, 30 * 1000);       // Every 30s
+    const transferIntervalMinutes = Number(pluginOptions.transferInterval) || 10;
+    setInterval(transferTroopsLogic, transferIntervalMinutes * 60 * 1000);
+    setInterval(syncInventoryLogic, 5 * 1000);        // Every 5s
 
     await getKingdomInfoList();
     let resourceCastleList = await getResourceCastleList()
@@ -371,10 +393,10 @@ const startLogic = async () => {
 
             const executionStartTime = Date.now();
             const attackInfoResult = await waitToAttack(async () => {
-                const delayMs = randomDelay(1000, 3000);
+                const delayMs = randomDelay(2000, 3000);
                 targetCache = null;
                 sendXT("fnt", JSON.stringify({}))
-                for (let i = 0; i < 10; i++) { if (targetCache) break; await new Promise(r => setTimeout(r, 500)); }
+                for (let i = 0; i < 3; i++) { if (targetCache) break; await new Promise(r => setTimeout(r, 500)); }
                 if (!targetCache) return { result: "NO_TARGET" }
                 await sleep(delayMs)
 
@@ -482,14 +504,6 @@ const startLogic = async () => {
                             const maxTroopFlank = Math.max(0, rawFlank - (rawFlank > 15 ? 10 : 1))
                             const maxTroopFront = Math.max(0, rawFront - (rawFront > 15 ? 10 : 1))
 
-                            // Diagnostic logging for wave limits
-                            if (waveIndex === 0) {
-                                const totalRelicBonus = (commanderStats.relicAttackUnitAmountFlank ?? 0) + (commanderStats.relicAttackUnitAmountFront ?? 0);
-                                if (totalRelicBonus > 50) {
-                                    console.warn(`[${name}] ⚠️ High relic bonuses detected: Flank +${commanderStats.relicAttackUnitAmountFlank ?? 0}%, Front +${commanderStats.relicAttackUnitAmountFront ?? 0}%`);
-                                }
-                            }
-
                             if (doLeft) {
                                 // Check if flank has tools but no troops
                                 const hasTools = wave.L.T && wave.L.T.some(slot => slot && slot[0] !== -1 && slot[1] > 0);
@@ -506,6 +520,12 @@ const startLogic = async () => {
                                 }
 
                                 let currentMax = maxTroopFlank;
+                                // Apply user-defined auto-fill limit if set
+                                const userLimit = Number(pluginOptions.maxAutoFillTroops) || 0;
+                                if (userLimit > 0) {
+                                    currentMax = Math.min(currentMax, userLimit);
+                                }
+
                                 wave.L.U.forEach((unitSlot, i) => {
                                     if (currentMax <= 0) return;
                                     let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
@@ -530,6 +550,12 @@ const startLogic = async () => {
                                 }
 
                                 let currentMax = maxTroopFlank;
+                                // Apply user-defined auto-fill limit if set
+                                const userLimit = Number(pluginOptions.maxAutoFillTroops) || 0;
+                                if (userLimit > 0) {
+                                    currentMax = Math.min(currentMax, userLimit);
+                                }
+
                                 wave.R.U.forEach((unitSlot, i) => {
                                     if (currentMax <= 0) return;
                                     let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
@@ -554,6 +580,12 @@ const startLogic = async () => {
                                 }
 
                                 let currentMax = maxTroopFront;
+                                // Apply user-defined auto-fill limit if set
+                                const userLimit = Number(pluginOptions.maxAutoFillTroops) || 0;
+                                if (userLimit > 0) {
+                                    currentMax = Math.min(currentMax, userLimit);
+                                }
+
                                 wave.M.U.forEach((unitSlot, i) => {
                                     if (currentMax <= 0) return;
                                     let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
@@ -773,10 +805,9 @@ const startLogic = async () => {
                 if (attackInfoResult.result == 256) {
                     useCommander(commander.lordID)
                 } else if (attackInfoResult.result == 101) {
-                    console.warn(`[${name}] Sync error. 1m cooldown.`)
                     freeCommander(commander.lordID);
                     sendXT("dcl", JSON.stringify({ CD: 1 }));
-                    await sleep(60000);
+                    await sleep(5000);
                 } else if (attackInfoResult.result == 313) {
                     console.error(`[${name}] ❌ Error 313: ATTACK_TOO_MANY_UNITS`);
                     console.error(`[${name}] This error indicates the total unit count exceeded server limits.`);
