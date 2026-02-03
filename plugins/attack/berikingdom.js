@@ -7,7 +7,7 @@ if (isMainThread) {
     const presetOptions = getPresetOptions();
     module.exports = {
         name: name,
-        description: "Hardcoded Attack + Fixed Transfer Logic",
+        description: "Automated Berimond Attack with Preset Support",
         pluginOptions: [
             {
                 type: "Text",
@@ -21,13 +21,6 @@ if (isMainThread) {
                 label: "Auto Transfer Troops (Every 15m)",
                 description: "Automatically send troops from Kingdom 3",
                 key: "transferWeakTroops",
-                default: true
-            },
-            {
-                type: "Checkbox",
-                label: "Smart Unit Replacement",
-                description: "If the planned unit is missing, replace with the strongest available unit of the same role.",
-                key: "smartUnitReplacement",
                 default: true
             },
             {
@@ -85,7 +78,8 @@ const { Types, getResourceCastleList, ClientCommands, areaInfoLock, AreaType, Ki
 const { waitToAttack, getAttackInfo, assignUnit, getAmountSoldiersFlank, getAmountSoldiersFront, getTotalAmountToolsFlank, getTotalAmountToolsFront, getMaxUnitsInReinforcementWave, sleep, boxMullerRandom } = require("../../plugins/attack/attack")
 const { waitForCommanderAvailable, freeCommander, useCommander, movementEvents } = require("../../plugins/commander")
 const { sendXT, waitForResult, xtHandler, events, botConfig, playerInfo } = require("../../ggebot")
-const { applyPreset } = require("../../plugins/attack/presets") // NEW IMPORT
+const { applyPreset } = require("../../plugins/attack/presets")
+const { getCommanderStats } = require("../../getEquipment")
 const units = require("../../items/units.json")
 const pretty = require('pretty-time')
 
@@ -94,16 +88,16 @@ pluginOptions.useFeather ??= false
 pluginOptions.useCoin ??= false
 pluginOptions.transferWeakTroops ??= true
 pluginOptions.useTimeSkips ??= true
-pluginOptions.smartUnitReplacement ??= true
 pluginOptions.attackLeft ??= true
 pluginOptions.attackMiddle ??= true
 pluginOptions.attackRight ??= true
 pluginOptions.useGamePreset ??= false
-pluginOptions.presetID ??= "1"
+pluginOptions.presetID ??= 0
 pluginOptions.maxWaves ??= 3
 
 const kid = KingdomID.berimond
 const eventID = 3
+const minTroopCount = 30
 
 let targetCache = null
 
@@ -123,6 +117,42 @@ xtHandler.on("sne", obj => {
 })
 
 const randomDelay = (min, max) => Math.floor(Math.random() * (max - min + 1) + min);
+
+/**
+ * Helper function to count total units assigned in attackInfo
+ * @param {Object} attackInfo - The attack info object
+ * @returns {Number} Total number of units
+ */
+function countTotalUnits(attackInfo) {
+    let total = 0;
+    attackInfo.A.forEach(wave => {
+        ['L', 'R', 'M'].forEach(side => {
+            if (wave[side] && wave[side].U) {
+                wave[side].U.forEach(slot => {
+                    if (slot && slot[1]) total += slot[1];
+                });
+            }
+        });
+    });
+    // Courtyard (RW)
+    if (attackInfo.RW) {
+        attackInfo.RW.forEach(slot => {
+            if (slot && slot[1]) total += slot[1];
+        });
+    }
+    return total;
+}
+
+/**
+ * Setup wave slots based on wall level requirements
+ * @param {Array} wallLevelRequirement - Array of level requirements for each slot
+ * @param {Array} row - Target array to push slots into
+ */
+function setupWave(wallLevelRequirement, row) {
+    wallLevelRequirement.forEach(levelReq => {
+        row.push([-1, 0]);
+    });
+}
 
 // --- TRANSFER LOGIC ---
 const transferTroopsLogic = async () => {
@@ -158,7 +188,7 @@ const transferTroopsLogic = async () => {
             await sleep(1000);
             const dcl = await ClientCommands.getDetailedCastleList()()
 
-            // --- TEMPORARY: TRANSFER FROM KINGDOM ID 3 ---
+            // Transfer from Kingdom ID 3
             const sourceKingdomID = 3;
             const sourceCastleList = dcl.castles.find(e => e.kingdomID == sourceKingdomID);
             let sourceCastle = sourceCastleList?.areaInfo[0];
@@ -224,24 +254,11 @@ const syncInventoryLogic = async () => {
 
         if (!beriCastleArea) return;
 
-        // Fetch detailed info
         const dcl = await ClientCommands.getDetailedCastleList()();
         const castle = dcl.castles.find(a => a.kingdomID == kid)?.areaInfo.find(a => a.areaID == beriCastleArea.extraData[0]);
 
         if (castle) {
-            cachedSourceCastle = castle; // Update global cache for attack loop
-            const { syncStatus } = require("../../ggebot");
-
-            let inventoryForUI = [];
-            castle.unitInventory.forEach(u => {
-                const unitInfo = units.find(obj => u.unitID == obj.wodID)
-                if (!unitInfo || u.ammount <= 0) return;
-                inventoryForUI.push({
-                    wodID: u.unitID,
-                    count: u.ammount,
-                    category: (unitInfo.role == "melee" || unitInfo.role == "ranged") ? 'unit' : 'tool'
-                });
-            });
+            cachedSourceCastle = castle;
         }
     } catch (e) { console.error(`[${name}] Inventory Sync Error:`, e); }
 };
@@ -249,12 +266,10 @@ const syncInventoryLogic = async () => {
 const startLogic = async () => {
     console.log(`[${name}] Logic Started.`)
 
-    // 1. Start Background Tasks
-    // Run immediately
+    // Start Background Tasks
     transferTroopsLogic();
     syncInventoryLogic();
 
-    // Set Intervals
     setInterval(transferTroopsLogic, 15 * 60 * 1000); // Every 15m
     setInterval(syncInventoryLogic, 30 * 1000);       // Every 30s
 
@@ -264,17 +279,15 @@ const startLogic = async () => {
 
     while (true) {
         try {
-            // Ensure we have the target castle area info
             if (!sourceCastleArea) {
                 const rcl = await getResourceCastleList()
                 sourceCastleArea = rcl.castles.find(e => e.kingdomID == kid)?.areaInfo.find(e => e.type == AreaType.beriCastle);
                 if (!sourceCastleArea) { await sleep(10000); continue; }
             }
 
-            // Use the cached castle data from syncLogic if available, otherwise fetch
+            // Use cached castle if available, otherwise fetch
             let sourceCastle = cachedSourceCastle;
             if (!sourceCastle) {
-                // Fallback if sync hasn't run yet
                 sourceCastle = (await ClientCommands.getDetailedCastleList()())
                     .castles.find(a => a.kingdomID == kid)
                     ?.areaInfo.find(a => a.areaID == sourceCastleArea.extraData[0])
@@ -283,21 +296,18 @@ const startLogic = async () => {
             if (!sourceCastle) { await sleep(5000); continue; }
 
             let availableTroops = [];
-            let inventoryLog = [];
-
             sourceCastle.unitInventory.forEach(u => {
                 const unitInfo = units.find(obj => u.unitID == obj.wodID)
                 if (!unitInfo || u.ammount <= 0) return;
                 if (unitInfo.role == "melee" || unitInfo.role == "ranged") {
                     availableTroops.push([unitInfo, u.ammount]);
-                    inventoryLog.push(`${u.unitID}: ${u.ammount}`);
                 }
             })
 
             let totalStrong = availableTroops.reduce((a, b) => a + b[1], 0);
 
-            if (totalStrong < 30) {
-                console.log(`[${name}] Not enough troops (${totalStrong}/30). Waiting 15s...`)
+            if (totalStrong < minTroopCount) {
+                console.log(`[${name}] Not enough troops (${totalStrong}/${minTroopCount}). Waiting 15s...`)
                 await sleep(15000);
                 continue;
             }
@@ -321,29 +331,156 @@ const startLogic = async () => {
                 const targetArea = (await ClientCommands.getAreaInfo(kid, targetCache.x, targetCache.y, targetCache.x, targetCache.y)()).areaInfo[0]
                 if (!targetArea) return { result: "INVALID_TARGET" }
 
-                // FIX: Request configured waves (Frontend returns index 0-3, so add 1)
-                // If undefined, default to 4 waves (index 3)
+                // Max waves: frontend returns index (0-3), convert to count (1-4)
                 const maxWaves = (pluginOptions.maxWaves !== undefined ? Number(pluginOptions.maxWaves) : 3) + 1;
 
                 const attackInfo = getAttackInfo(kid, sourceCastleArea, targetArea, commander, 70, maxWaves, pluginOptions.useCoin)
                 if (pluginOptions.useFeather) attackInfo.PTT = 2;
 
-                // --- DYNAMIC ATTACK BUILDER ---
+                // === PRESET LOGIC ===
                 if (pluginOptions.useGamePreset) {
                     const presetResult = applyPreset(attackInfo, pluginOptions.presetID, maxWaves);
                     if (!presetResult.success) {
                         console.warn(`[${name}] Preset Error: ${presetResult.error}`);
                         return { result: presetResult.error };
                     }
-                    console.log(`[${name}] Game Preset Applied (ID: ${pluginOptions.presetID}, Waves: ${maxWaves})`);
-                } else {
-                    // --- AUTOMATIC FALLBACK ATTACK ---
-                    // Respects: attackLeft, attackMiddle, attackRight
+                    console.log(`[${name}] Game Preset Applied: "${presetResult.presetName}" (Slot ${pluginOptions.presetID + 1}, Waves: ${maxWaves})`);
 
-                    // 1. Gather Units & Tools
-                    let attackerMeleeTroops = []
-                    let attackerRangeTroops = []
-                    let attackerTools = []
+                    // Check if preset assigned any troops
+                    let presetTroopCount = countTotalUnits(attackInfo);
+
+                    if (presetTroopCount <= 0) {
+                        // Preset has only tools, no units - auto-fill with available troops
+                        console.log(`[${name}] Preset has no troops, auto-filling with available units...`);
+
+                        // Refresh inventory data
+                        const freshSourceCastle = (await ClientCommands.getDetailedCastleList()())
+                            .castles.find(a => a.kingdomID == kid)
+                            .areaInfo.find(a => a.areaID == sourceCastleArea.extraData[0]);
+
+                        // Build troop lists from FRESH inventory
+                        const attackerMeleeTroops = []
+                        const attackerRangeTroops = []
+
+                        for (let i = 0; i < freshSourceCastle.unitInventory.length; i++) {
+                            const unit = freshSourceCastle.unitInventory[i]
+                            const unitInfo = units.find(obj => unit.unitID == obj.wodID)
+                            if (unitInfo == undefined) continue
+
+                            if (unitInfo.fightType == 0) {
+                                if (unitInfo.role == "melee")
+                                    attackerMeleeTroops.push([unitInfo, unit.ammount])
+                                else if (unitInfo.role == "ranged")
+                                    attackerRangeTroops.push([unitInfo, unit.ammount])
+                            }
+                        }
+
+                        // Sort troops by amount (descending)
+                        attackerMeleeTroops.sort((a, b) => b[1] - a[1]);
+                        attackerRangeTroops.sort((a, b) => b[1] - a[1]);
+
+                        let allTroopCount = 0
+                        attackerRangeTroops.forEach(e => allTroopCount += e[1])
+                        attackerMeleeTroops.forEach(e => allTroopCount += e[1])
+
+                        console.log(`[${name}] 📊 Inventory: ${allTroopCount} troops (${attackerMeleeTroops.length} melee types, ${attackerRangeTroops.length} ranged types)`)
+
+                        if (allTroopCount < minTroopCount) {
+                            console.warn(`[${name}] Not enough troops (${allTroopCount}/${minTroopCount})`);
+                            return { result: "NO_MORE_TROOPS" };
+                        }
+
+                        // Auto-fill troops into empty unit slots
+                        await sleep(boxMullerRandom(200, 400, 1))
+
+                        const waveCount = maxWaves;
+                        const doLeft = pluginOptions.attackLeft !== false;
+                        const doRight = pluginOptions.attackRight !== false;
+                        const doMiddle = pluginOptions.attackMiddle !== false;
+
+                        // Recreate unit slots since preset cleared them
+                        attackInfo.A.forEach((wave, waveIndex) => {
+                            if (waveIndex >= waveCount) return;
+
+                            // Only recreate unit slots, keep existing tool slots
+                            if (wave.L.U.length === 0) {
+                                setupWave([0, 13], wave.L.U);
+                            }
+                            if (wave.M.U.length === 0) {
+                                setupWave([0, 0, 13, 13, 26, 26], wave.M.U);
+                            }
+                            if (wave.R.U.length === 0) {
+                                setupWave([0, 13], wave.R.U);
+                            }
+                        });
+
+                        // Recreate courtyard slots if needed
+                        if (attackInfo.RW.length === 0) {
+                            for (let i = 0; i < 8; i++) {
+                                attackInfo.RW.push([-1, 0]);
+                            }
+                        }
+
+                        // Fill each wave independently
+                        attackInfo.A.forEach((wave, waveIndex) => {
+                            if (waveIndex >= waveCount) return;
+
+                            const commanderStats = getCommanderStats(commander)
+                            let rawFlank = Math.floor(getAmountSoldiersFlank(70) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100)
+                            let rawFront = Math.floor(getAmountSoldiersFront(70) * 1 + (commanderStats.relicAttackUnitAmountFront ?? 0) / 100)
+
+                            const maxTroopFlank = Math.max(0, rawFlank - (rawFlank > 15 ? 5 : 1))
+                            const maxTroopFront = Math.max(0, rawFront - (rawFront > 15 ? 5 : 1))
+
+                            if (doLeft) {
+                                let currentMax = maxTroopFlank;
+                                wave.L.U.forEach((unitSlot, i) => {
+                                    if (currentMax <= 0) return;
+                                    let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
+                                        attackerMeleeTroops : attackerRangeTroops, currentMax);
+                                    currentMax -= assigned;
+                                });
+                            }
+
+                            if (doRight) {
+                                let currentMax = maxTroopFlank;
+                                wave.R.U.forEach((unitSlot, i) => {
+                                    if (currentMax <= 0) return;
+                                    let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
+                                        attackerMeleeTroops : attackerRangeTroops, currentMax);
+                                    currentMax -= assigned;
+                                });
+                            }
+
+                            if (doMiddle) {
+                                let currentMax = maxTroopFront;
+                                wave.M.U.forEach((unitSlot, i) => {
+                                    if (currentMax <= 0) return;
+                                    let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
+                                        attackerMeleeTroops : attackerRangeTroops, currentMax);
+                                    currentMax -= assigned;
+                                });
+                            }
+                        })
+
+                        // Fill courtyard
+                        let maxTroops = getMaxUnitsInReinforcementWave(playerInfo.level, 70);
+                        attackInfo.RW.forEach((unitSlot, i) => {
+                            if (maxTroops <= 0) return;
+                            let attacker = i & 1 ?
+                                (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops) :
+                                (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops)
+
+                            let assigned = assignUnit(unitSlot, attacker,
+                                Math.floor(maxTroops / 2));
+                            maxTroops -= assigned;
+                        });
+                    }
+                } else {
+                    // === MANUAL MODE (No Preset) ===
+                    const attackerMeleeTroops = []
+                    const attackerRangeTroops = []
+                    const attackerTools = []
 
                     sourceCastle.unitInventory.forEach(u => {
                         const unitInfo = units.find(obj => u.unitID == obj.wodID)
@@ -353,102 +490,151 @@ const startLogic = async () => {
                             attackerMeleeTroops.push([unitInfo, u.ammount])
                         else if (unitInfo.role == "ranged")
                             attackerRangeTroops.push([unitInfo, u.ammount])
-                        else if (unitInfo.toolCategory) // General tool check
+                        else if (unitInfo.toolCategory)
                             attackerTools.push([unitInfo, u.ammount])
                     })
 
                     // Sort by power (Strongest first)
                     attackerMeleeTroops.sort((a, b) => Number(b[0].meleeAttack) - Number(a[0].meleeAttack))
                     attackerRangeTroops.sort((a, b) => Number(b[0].rangeAttack) - Number(a[0].rangeAttack))
-
-                    // Simple tool sort logic 
                     attackerTools.sort((a, b) => b[1] - a[1])
+
+                    let allTroopCount = 0
+                    attackerRangeTroops.forEach(e => allTroopCount += e[1])
+                    attackerMeleeTroops.forEach(e => allTroopCount += e[1])
+
+                    if (allTroopCount < minTroopCount) {
+                        console.warn(`[${name}] Not enough troops (${allTroopCount}/${minTroopCount})`);
+                        return { result: "NO_MORE_TROOPS" };
+                    }
+
+                    await sleep(boxMullerRandom(200, 400, 1))
+
+                    const waveCount = maxWaves;
+                    const doLeft = pluginOptions.attackLeft !== false;
+                    const doRight = pluginOptions.attackRight !== false;
+                    const doMiddle = pluginOptions.attackMiddle !== false;
 
                     const commanderStats = getCommanderStats(commander)
 
-                    // 2. Fill Waves
+                    // Fill Waves
                     attackInfo.A.forEach((wave, waveIndex) => {
-                        const maxTroopFlank = getAmountSoldiersFlank(70) + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100
-                        const maxTroopFront = getAmountSoldiersFront(70) + (commanderStats.relicAttackUnitAmountFront ?? 0) / 100
-                        // Tools: approximate limit per slot
+                        if (waveIndex >= waveCount) return;
+
+                        let rawFlank = Math.floor(getAmountSoldiersFlank(70) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100)
+                        let rawFront = Math.floor(getAmountSoldiersFront(70) * 1 + (commanderStats.relicAttackUnitAmountFront ?? 0) / 100)
+
+                        const maxTroopFlank = Math.max(0, rawFlank - (rawFlank > 15 ? 5 : 1))
+                        const maxTroopFront = Math.max(0, rawFront - (rawFront > 15 ? 5 : 1))
+
                         const maxToolsFlank = getTotalAmountToolsFlank(70, 0)
                         const maxToolsFront = getTotalAmountToolsFront(70)
 
-                        // We use a simplified filling strategy here similar to other plugins:
-                        // Fill tools first, then troops.
-
-                        // --- LEFT ---
-                        if (pluginOptions.attackLeft) {
+                        // LEFT
+                        if (doLeft) {
                             let toolsLeft = maxToolsFlank
                             wave.L.T.forEach(slot => toolsLeft -= assignUnit(slot, attackerTools, toolsLeft))
 
                             let troopsLeft = maxTroopFlank
                             wave.L.U.forEach(slot => {
+                                if (troopsLeft <= 0) return;
                                 troopsLeft -= assignUnit(slot, attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops, troopsLeft)
                             })
                         }
 
-                        // --- MIDDLE ---
-                        if (pluginOptions.attackMiddle) {
+                        // MIDDLE
+                        if (doMiddle) {
                             let toolsMid = maxToolsFront
                             wave.M.T.forEach(slot => toolsMid -= assignUnit(slot, attackerTools, toolsMid))
 
                             let troopsMid = maxTroopFront
                             wave.M.U.forEach(slot => {
+                                if (troopsMid <= 0) return;
                                 troopsMid -= assignUnit(slot, attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops, troopsMid)
                             })
                         }
 
-                        // --- RIGHT ---
-                        if (pluginOptions.attackRight) {
+                        // RIGHT
+                        if (doRight) {
                             let toolsRight = maxToolsFlank
                             wave.R.T.forEach(slot => toolsRight -= assignUnit(slot, attackerTools, toolsRight))
 
                             let troopsRight = maxTroopFlank
                             wave.R.U.forEach(slot => {
+                                if (troopsRight <= 0) return;
                                 troopsRight -= assignUnit(slot, attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops, troopsRight)
                             })
                         }
                     });
-                }
 
-                // Validation: Check if we actually added any soldiers?
-                let totalSoldiersSent = 0;
-                attackInfo.A.forEach(wave => {
-                    ['L', 'M', 'R'].forEach(side => {
-                        if (wave[side].U[0] && wave[side].U[0][1] > 0) totalSoldiersSent += wave[side].U[0][1];
+                    // Fill courtyard
+                    let maxTroops = getMaxUnitsInReinforcementWave(playerInfo.level, 70);
+                    attackInfo.RW.forEach((unitSlot, i) => {
+                        if (maxTroops <= 0) return;
+                        let attacker = i & 1 ?
+                            (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops) :
+                            (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops)
+
+                        let assigned = assignUnit(unitSlot, attacker,
+                            Math.floor(maxTroops / 2));
+                        maxTroops -= assigned;
                     })
-                });
-
-                if (totalSoldiersSent < 10) {
-                    console.warn(`[${name}] Attack plan resulted in too few troops (${totalSoldiersSent}). Check inventory or settings.`);
-                    return { result: "MISSING_ITEMS" };
                 }
 
+                // === FINAL VALIDATION ===
+                const finalTroopCount = countTotalUnits(attackInfo);
+                if (finalTroopCount <= 0) {
+                    console.warn(`[${name}] Skipped target - No troops assigned after fill attempt`)
+                    return { result: "NO_TROOPS_ASSIGNED" }
+                }
+
+                // Send attack
                 await areaInfoLock(() => sendXT("cra", JSON.stringify(attackInfo)))
                 let [obj, r] = await waitForResult("cra", 10000, (o, res) => true)
 
-                return { ...obj, result: r }
+                const executionDuration = ((Date.now() - executionStartTime) / 1000).toFixed(2);
+                return { ...obj, result: r, executionDuration, soldierCount: finalTroopCount }
             })
 
             const duration = ((Date.now() - executionStartTime) / 1000).toFixed(2);
 
             if (attackInfoResult && attackInfoResult.result != 0) {
-                if (attackInfoResult.result == 256) useCommander(commander.lordID)
-                else if (attackInfoResult.result == 101) {
+                if (attackInfoResult.result == 256) {
+                    useCommander(commander.lordID)
+                } else if (attackInfoResult.result == 101) {
                     console.warn(`[${name}] Sync error. 1m cooldown.`)
-                    freeCommander(commander.lordID); sendXT("dcl", JSON.stringify({ CD: 1 })); await sleep(60000);
+                    freeCommander(commander.lordID);
+                    sendXT("dcl", JSON.stringify({ CD: 1 }));
+                    await sleep(60000);
+                } else if (attackInfoResult.result == "NO_TARGET") {
+                    console.log(`[${name}] No target available. Waiting 5s...`)
+                    freeCommander(commander.lordID);
+                    await sleep(5000);
+                } else if (attackInfoResult.result == "NO_MORE_TROOPS") {
+                    console.warn(`[${name}] 🛑 Not enough troops. Waiting 10m...`)
+                    freeCommander(commander.lordID);
+                    await sleep(10 * 60 * 1000);
+                } else if (attackInfoResult.result == "NO_TROOPS_ASSIGNED") {
+                    console.warn(`[${name}] No troops assigned. Waiting 5s...`)
+                    freeCommander(commander.lordID);
+                    await sleep(5000);
                 } else {
-                    console.warn(`[${name}] Error: ${attackInfoResult.result}`); freeCommander(commander.lordID);
+                    console.warn(`[${name}] Error: ${attackInfoResult.result}`);
+                    freeCommander(commander.lordID);
                 }
-            } else if (attackInfoResult) {
-                console.info(`[${name}] Attack sent! Lord ${commander.lordID} (Setup: ${duration}s)`)
+            } else if (attackInfoResult && attackInfoResult.AAM) {
+                const soldierCount = attackInfoResult.soldierCount || 0;
+                console.info(`[${name}] Attack sent! Lord ${commander.lordID} | Troops: ${soldierCount} | Setup: ${duration}s`)
                 useCommander(commander.lordID)
             } else {
                 freeCommander(commander.lordID)
             }
 
-        } catch (e) { console.error(`[${name}] Error:`, e); freeCommander(commander?.lordID); await sleep(5000) }
+        } catch (e) {
+            console.error(`[${name}] Error:`, e);
+            if (commander?.lordID) freeCommander(commander.lordID);
+            await sleep(5000)
+        }
     }
 }
 

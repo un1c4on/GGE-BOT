@@ -11,9 +11,6 @@ import { ErrorType, ActionType } from "../types.js"
 import PluginsTable from './pluginsTable'
 import { getTranslation } from '../translations.js'
 
-import DoubleArrowIcon from '@mui/icons-material/DoubleArrow'
-import AttackDesigner from './AttackDesigner'
-
 export default function UserSettings(props) {
     const { language, activeTab } = props;
     const t = (key) => getTranslation(language, key);
@@ -21,7 +18,6 @@ export default function UserSettings(props) {
     const [loading, setLoading] = React.useState(true);
     const [instances, setInstances] = React.useState([]);
     const [langData, setLangData] = React.useState({});
-    const [openDesigner, setOpenDesigner] = React.useState(false);
 
     // Form states
     const [name, setName] = React.useState(props.selectedUser.name ?? "");
@@ -151,38 +147,6 @@ export default function UserSettings(props) {
                                 />
                             </Box>
                             <Divider sx={{ mb: 4, opacity: 0.1 }} />
-
-                            {/* SALDIRI TASARIM BUTONU (Sadece Berimond için şimdilik) */}
-                            {plugin.key === 'berikingdom' && (
-                                <Box sx={{ mb: 3 }}>
-                                    <Button
-                                        variant="contained"
-                                        color="warning"
-                                        startIcon={<DoubleArrowIcon />}
-                                        onClick={() => setOpenDesigner(true)}
-                                        sx={{ mb: 2 }}
-                                    >
-                                        {t("Saldırı Tasarla")}
-                                    </Button>
-
-                                    <Backdrop
-                                        open={openDesigner}
-                                        sx={{ zIndex: 9999 }}
-                                    >
-                                        <AttackDesigner
-                                            inventory={props.userStatus?.enrichedInventory}
-                                            onClose={() => setOpenDesigner(false)}
-                                            onSave={(plan) => {
-                                                const np = { ...plugins };
-                                                np[plugin.key] = { ...np[plugin.key], attackPlan: plan };
-                                                setPlugins(np);
-                                                setOpenDesigner(false);
-                                            }}
-                                            t={t}
-                                        />
-                                    </Backdrop>
-                                </Box>
-                            )}
 
                             {/* Plugin Specific Settings */}
                             <Box sx={{ bgcolor: 'rgba(255,255,255,0.02)', p: 4, borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
