@@ -358,8 +358,8 @@ async function barronHit(name, type, kid, options) {
                                 let currentMax = maxTroopFlank;
                                 wave.L.U.forEach((unitSlot, i) => {
                                     if (currentMax <= 0) return;
-                                    let assigned = assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
-                                        attackerRangeTroops : attackerMeleeTroops, currentMax);
+                                    let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
+                                        attackerMeleeTroops : attackerRangeTroops, currentMax);
                                     currentMax -= assigned;
                                 });
                             }
@@ -368,8 +368,8 @@ async function barronHit(name, type, kid, options) {
                                 let currentMax = maxTroopFlank;
                                 wave.R.U.forEach((unitSlot, i) => {
                                     if (currentMax <= 0) return;
-                                    let assigned = assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
-                                        attackerRangeTroops : attackerMeleeTroops, currentMax);
+                                    let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
+                                        attackerMeleeTroops : attackerRangeTroops, currentMax);
                                     currentMax -= assigned;
                                 });
                             }
@@ -378,8 +378,8 @@ async function barronHit(name, type, kid, options) {
                                 let currentMax = maxTroopFront;
                                 wave.M.U.forEach((unitSlot, i) => {
                                     if (currentMax <= 0) return;
-                                    let assigned = assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
-                                        attackerRangeTroops : attackerMeleeTroops, currentMax);
+                                    let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
+                                        attackerMeleeTroops : attackerRangeTroops, currentMax);
                                     currentMax -= assigned;
                                 });
                             }
@@ -390,7 +390,7 @@ async function barronHit(name, type, kid, options) {
                             attackInfo.RW.forEach((unitSlot, i) => {
                                 if (maxTroops <= 0) return;
                                 let attacker = i & 1 ?
-                                    (attackerMeleeTroops.length > 0 ? attackerMeleeTroops : attackerRangeTroops) :
+                                    (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops) :
                                     (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops)
 
                                 let assigned = assignUnit(unitSlot, attacker,
@@ -455,8 +455,8 @@ async function barronHit(name, type, kid, options) {
                             let currentMax = maxTroopFlank;
                             wave.L.U.forEach((unitSlot, i) => {
                                 if (currentMax <= 0) return;
-                                let assigned = assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
-                                    attackerRangeTroops : attackerMeleeTroops, currentMax);
+                                let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
+                                    attackerMeleeTroops : attackerRangeTroops, currentMax);
                                 currentMax -= assigned;
                             });
                         }
@@ -465,8 +465,8 @@ async function barronHit(name, type, kid, options) {
                             let currentMax = maxTroopFlank;
                             wave.R.U.forEach((unitSlot, i) => {
                                 if (currentMax <= 0) return;
-                                let assigned = assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
-                                    attackerRangeTroops : attackerMeleeTroops, currentMax);
+                                let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
+                                    attackerMeleeTroops : attackerRangeTroops, currentMax);
                                 currentMax -= assigned;
                             });
                         }
@@ -475,8 +475,8 @@ async function barronHit(name, type, kid, options) {
                             let currentMax = maxTroopFront;
                             wave.M.U.forEach((unitSlot, i) => {
                                 if (currentMax <= 0) return;
-                                let assigned = assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
-                                    attackerRangeTroops : attackerMeleeTroops, currentMax);
+                                let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
+                                    attackerMeleeTroops : attackerRangeTroops, currentMax);
                                 currentMax -= assigned;
                             });
                         }
@@ -488,7 +488,7 @@ async function barronHit(name, type, kid, options) {
                         attackInfo.RW.forEach((unitSlot, i) => {
                             if (maxTroops <= 0) return;
                             let attacker = i & 1 ?
-                                (attackerMeleeTroops.length > 0 ? attackerMeleeTroops : attackerRangeTroops) :
+                                (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops) :
                                 (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops)
 
                             let assigned = assignUnit(unitSlot, attacker,
@@ -505,8 +505,8 @@ async function barronHit(name, type, kid, options) {
                     return { result: 0, executionDuration: 0 }
                 }
 
-                // Final hesitation before clicking "Attack" (Human verification/hesitation ~150ms-400ms)
-                await sleep(boxMullerRandom(150, 400, 1))
+                // Final hesitation before clicking "Attack" (Human verification/hesitation ~2000ms-3000ms)
+                await sleep(boxMullerRandom(2000, 3000, 1))
 
                 await areaInfoLock(() => sendXT("cra", JSON.stringify(attackInfo)))
 
@@ -521,6 +521,7 @@ async function barronHit(name, type, kid, options) {
 
                 const executionDuration = ((Date.now() - executionStartTime) / 1000).toFixed(2);
                 obj.executionDuration = executionDuration; // Pass it out
+                obj.soldierCount = finalTroopCount;
 
                 return { ...obj, result: r, executionDuration }
             })
@@ -537,7 +538,11 @@ async function barronHit(name, type, kid, options) {
                 return true
             }
 
-            console.info(`[${name}] Hitting target C${attackInfo.AAM.UM.L.VIS + 1} ${attackInfo.AAM.M.TA[1]}:${attackInfo.AAM.M.TA[2]} ${pretty(Math.round(1000000000 * Math.abs(Math.max(0, attackInfo.AAM.M.TT - attackInfo.AAM.M.PT))), 's') + " till impact"} (Setup: ${attackInfo.executionDuration}s)`)
+            const kingdomNames = { 0: "Great Empire", 1: "Burning Sands", 2: "Everwinter Glacier", 3: "Fire Peaks", 4: "Storm Islands" }
+            const kingdomName = kingdomNames[kid] || `Kingdom ${kid}`;
+            const soldierCount = attackInfo.soldierCount;
+
+            console.info(`[${name}] Hitting target C${attackInfo.AAM.UM.L.VIS + 1} ${attackInfo.AAM.M.TA[1]}:${attackInfo.AAM.M.TA[2]} in ${kingdomName} | Troops: ${soldierCount} | Prep: ${attackInfo.executionDuration}s | ${pretty(Math.round(1000000000 * Math.abs(Math.max(0, attackInfo.AAM.M.TT - attackInfo.AAM.M.PT))), 's') + " till impact"}`)
             return true
         } catch (e) {
             freeCommander(commander.lordID)

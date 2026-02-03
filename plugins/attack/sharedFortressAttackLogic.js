@@ -8,7 +8,7 @@ if (isMainThread)
     }
 
 const { Types, getResourceCastleList, ClientCommands, areaInfoLock, AreaType, KingdomID } = require('../../protocols')
-const { waitToAttack, getAttackInfo, assignUnit, getAmountSoldiersFlank, getMaxUnitsInReinforcementWave } = require("./attack")
+const { waitToAttack, getAttackInfo, assignUnit, getAmountSoldiersFlank, getMaxUnitsInReinforcementWave, boxMullerRandom, sleep } = require("./attack")
 const { movementEvents, waitForCommanderAvailable, freeCommander, useCommander } = require("../commander")
 const { sendXT, waitForResult, xtHandler, botConfig, playerInfo } = require("../../ggebot")
 const { applyPreset } = require("../../plugins/attack/presets")
@@ -99,6 +99,31 @@ async function fortressHit(name, kid, level, options) {
     const sourceCastleArea = (await getResourceCastleList()).castles.find(e => e.kingdomID == kid)
         .areaInfo.find(e => AreaType.externalKingdom == e.type);
 
+    /**
+     * Helper function to count total units assigned in attackInfo
+     * @param {Object} attackInfo - The attack info object
+     * @returns {Number} Total number of units
+     */
+    function countTotalUnits(attackInfo) {
+        let total = 0;
+        attackInfo.A.forEach(wave => {
+            ['L', 'R', 'M'].forEach(side => {
+                if (wave[side] && wave[side].U) {
+                    wave[side].U.forEach(slot => {
+                        if (slot && slot[1]) total += slot[1];
+                    });
+                }
+            });
+        });
+        // Courtyard (RW)
+        if (attackInfo.RW) {
+            attackInfo.RW.forEach(slot => {
+                if (slot && slot[1]) total += slot[1];
+            });
+        }
+        return total;
+    }
+
     const sendHit = async () => {
         let comList = undefined
         if (![, 0, ""].includes(pluginOptions.commanderWhiteList)) {
@@ -113,6 +138,7 @@ async function fortressHit(name, kid, level, options) {
         const hasShieldMadiens = !(((commander.EQ[3] ?? [])[5]?.every(([id, _]) => id == 121 ? false : true)) ?? true)
         try {
             const attackInfo = await waitToAttack(async () => {
+                const executionStartTime = Date.now()
                 const sourceCastle = (await ClientCommands.getDetailedCastleList()())
                     .castles.find(a => a.kingdomID == kid)
                     .areaInfo.find(a => a.areaID == sourceCastleArea.extraData[0])
@@ -196,14 +222,14 @@ async function fortressHit(name, kid, level, options) {
                         let maxTroops = maxTroopFlank
 
                         wave.L.U.forEach((unitSlot, i) =>
-                            maxTroops -= assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
-                                attackerRangeTroops : attackerMeleeTroops, maxTroops))
+                            maxTroops -= assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
+                                attackerMeleeTroops : attackerRangeTroops, maxTroops))
 
                         if (!hasShieldMadiens) {
                             let maxTroops = getMaxUnitsInReinforcementWave(playerInfo.level, level)
                             attackInfo.RW.forEach((unitSlot, i) => {
                                 let attacker = i & 1 ?
-                                    (attackerMeleeTroops.length > 0 ? attackerMeleeTroops : attackerRangeTroops) :
+                                    (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops) :
                                     (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops)
 
                                 maxTroops -= assignUnit(unitSlot, attacker,
@@ -212,6 +238,12 @@ async function fortressHit(name, kid, level, options) {
                         }
                     })
                 }
+
+                // --- FINAL VALIDATION ---
+                const finalTroopCount = countTotalUnits(attackInfo);
+
+                // Final hesitation before clicking "Attack" (Human verification/hesitation ~2000ms-3000ms)
+                await sleep(boxMullerRandom(2000, 3000, 1))
 
                 await areaInfoLock(() => sendXT("cra", JSON.stringify(attackInfo)))
 
@@ -223,7 +255,10 @@ async function fortressHit(name, kid, level, options) {
                         return false
                     return true
                 })
-                return { ...obj, result: r }
+                const executionDuration = ((Date.now() - executionStartTime) / 1000).toFixed(2);
+                obj.executionDuration = executionDuration;
+                obj.soldierCount = finalTroopCount;
+                return { ...obj, result: r, executionDuration }
             })
             if (!attackInfo) {
                 freeCommander(commander.lordID)
@@ -232,7 +267,11 @@ async function fortressHit(name, kid, level, options) {
             if (attackInfo.result != 0)
                 throw err[attackInfo.result]
 
-            console.info(`[${name}] Hitting target C${attackInfo.AAM.UM.L.VIS + 1} ${attackInfo.AAM.M.TA[1]}:${attackInfo.AAM.M.TA[2]} ${pretty(Math.round(1000000000 * Math.abs(Math.max(0, attackInfo.AAM.M.TT - attackInfo.AAM.M.PT))), 's') + " till impact"}`)
+            const kingdomNames = { 0: "Great Empire", 1: "Burning Sands", 2: "Everwinter Glacier", 3: "Fire Peaks", 4: "Storm Islands" }
+            const kingdomName = kingdomNames[kid] || `Kingdom ${kid}`;
+            const soldierCount = attackInfo.soldierCount;
+
+            console.info(`[${name}] Hitting target C${attackInfo.AAM.UM.L.VIS + 1} ${attackInfo.AAM.M.TA[1]}:${attackInfo.AAM.M.TA[2]} in ${kingdomName} | Troops: ${soldierCount} | Prep: ${attackInfo.executionDuration}s | ${pretty(Math.round(1000000000 * Math.abs(Math.max(0, attackInfo.AAM.M.TT - attackInfo.AAM.M.PT))), 's') + " till impact"}`)
             return true
         } catch (e) {
             freeCommander(commander.lordID)
