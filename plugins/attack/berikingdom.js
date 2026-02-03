@@ -307,13 +307,19 @@ const transferTroopsLogic = async () => {
                             console.log(`[${name}] Found cooldown: ${transferInfo.remainingTime}s`);
                             console.log(`[${name}] Skipping cooldown with MS5...`);
                             await ClientCommands.getMinuteSkipKingdom("MS5", kid, KingdomSkipType.sendTroops)();
-                            await sleep(1000);
 
-                                // Retry transfer
-                                console.log(`[${name}] Retrying transfer...`);
-                                sendXT("kut", JSON.stringify({ SCID: sourceCastle.areaID, SKID: sourceKingdomID, TKID: kid, CID: -1, A: sendTroops }))
-                                const retryResult = await waitForResult("kut", 10000);
-                                kutCode = retryResult[1];
+                            // Wait for server to update
+                            await sleep(3000);
+
+                            // Refresh kingdom info to ensure cooldown is cleared
+                            await getKingdomInfoList();
+                            await sleep(500);
+
+                            // Retry transfer
+                            console.log(`[${name}] Retrying transfer...`);
+                            sendXT("kut", JSON.stringify({ SCID: sourceCastle.areaID, SKID: sourceKingdomID, TKID: kid, CID: -1, A: sendTroops }))
+                            const retryResult = await waitForResult("kut", 10000);
+                            kutCode = retryResult[1];
 
                             if (kutCode !== 0) {
                                 console.log(`[${name}] Still blocked: Too many active movements (attacks/transfers). Waiting for some to complete...`);
