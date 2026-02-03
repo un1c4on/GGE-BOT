@@ -130,6 +130,7 @@ const eventID = 3
 const minTroopCount = 30
 
 let targetCache = null
+let isTransferring = false  // Flag to prevent race condition
 
 xtHandler.on("fnt", (obj, result) => {
     if (obj.X && obj.Y) targetCache = { x: obj.X, y: obj.Y, type: obj.T || 17 }
@@ -223,8 +224,13 @@ function setupWave(wallLevelRequirement, row) {
 // --- TRANSFER LOGIC ---
 const transferTroopsLogic = async () => {
     if (!pluginOptions.transferWeakTroops) return;
+    if (isTransferring) {
+        console.log(`[${name}] Transfer already in progress, skipping...`);
+        return;
+    }
 
     try {
+        isTransferring = true;  // Set flag
         console.log(`[${name}] Transfer Check Initiated...`)
         const kpi = await getKingdomInfoList()
         let transferInfo = kpi.troopTransferList.find(e => e.kingdomID == kid)
@@ -315,9 +321,33 @@ const transferTroopsLogic = async () => {
                             await getKingdomInfoList();
                             await sleep(500);
 
+                            // Re-check transfer limit (might have changed after skip)
+                            sendXT("fuc", JSON.stringify({ CID: beriCastle.extraData[0] }))
+                            let fucRetry = await waitForResult("fuc", 5000)
+                            let newLimit = fucRetry[0]?.FUC || 0
+                            console.log(`[${name}] New transfer limit after skip: ${newLimit}`);
+
+                            if (newLimit <= 0) {
+                                console.log(`[${name}] No transfer capacity available. Skipping retry.`);
+                                return;
+                            }
+
+                            // Recalculate troops based on new limit
+                            let retrySendTroops = [];
+                            let retryLimit = newLimit;
+                            for (let i = 0; i < sendTroops.length && retryLimit > 0; i++) {
+                                const [unitID, amount] = sendTroops[i];
+                                const sendAmount = Math.min(amount, retryLimit);
+                                if (sendAmount > 0) {
+                                    retrySendTroops.push([unitID, sendAmount]);
+                                    retryLimit -= sendAmount;
+                                }
+                            }
+
+                            console.log(`[${name}] Retrying transfer with adjusted troops (${newLimit - retryLimit}/${newLimit})...`);
+
                             // Retry transfer
-                            console.log(`[${name}] Retrying transfer...`);
-                            sendXT("kut", JSON.stringify({ SCID: sourceCastle.areaID, SKID: sourceKingdomID, TKID: kid, CID: -1, A: sendTroops }))
+                            sendXT("kut", JSON.stringify({ SCID: sourceCastle.areaID, SKID: sourceKingdomID, TKID: kid, CID: -1, A: retrySendTroops }))
                             const retryResult = await waitForResult("kut", 10000);
                             kutCode = retryResult[1];
 
@@ -332,19 +362,34 @@ const transferTroopsLogic = async () => {
                         return;
                     }
 
+                    console.log(`[${name}] ✅ Transfer successful!`);
+
                     if (pluginOptions.useTimeSkips) {
-                        console.log(`[${name}] Transfer successful! Skipping travel time...`)
-                        await sleep(2000);
-                        console.log(`[${name}] Sending MS5 Skip...`)
+                        console.log(`[${name}] 🔄 Preparing to skip travel time...`);
+                        console.log(`[${name}] 📊 KingdomSkipType.sendTroops = ${KingdomSkipType.sendTroops}`);
+
+                        // Wait for server to register the transfer
+                        await sleep(3000);
+
+                        console.log(`[${name}] 📤 Sending MS5 skip command...`);
                         const skipResult = await ClientCommands.getMinuteSkipKingdom("MS5", kid, KingdomSkipType.sendTroops)();
-                        console.log(`[${name}] Travel skip completed.`);
+                        console.log(`[${name}] 📥 Skip result:`, skipResult);
+
+                        // Refresh to confirm
+                        await sleep(1000);
+                        const kpi = await getKingdomInfoList();
+                        console.log(`[${name}] ✅ Travel skip completed.`);
                     }
                 }
             } else {
                 console.error(`[${name}] Kingdom ${sourceKingdomID} Castle not found in updated DCL!`)
             }
         }
-    } catch (e) { console.error(`[${name}] Transfer Error:`, e) }
+    } catch (e) {
+        console.error(`[${name}] Transfer Error:`, e);
+    } finally {
+        isTransferring = false;  // Clear flag
+    }
 }
 
 // --- INVENTORY SYNC LOGIC ---
@@ -383,6 +428,12 @@ const startLogic = async () => {
 
     while (true) {
         try {
+            // Wait if transfer is in progress (avoid race condition)
+            if (isTransferring) {
+                await sleep(2000);
+                continue;
+            }
+
             if (!sourceCastleArea) {
                 const rcl = await getResourceCastleList()
                 sourceCastleArea = rcl.castles.find(e => e.kingdomID == kid)?.areaInfo.find(e => e.type == AreaType.beriCastle);
