@@ -38,11 +38,25 @@ if (isMainThread) {
                 default: true
             },
             {
+                type: "Text",
+                label: "Sol Max Asker",
+                description: "Sol flank için maksimum asker sayısı (0 = limitsiz)",
+                key: "maxTroopsLeft",
+                default: "0"
+            },
+            {
                 type: "Checkbox",
                 label: "Attack Middle",
                 description: "Enable attacks on center",
                 key: "attackMiddle",
                 default: true
+            },
+            {
+                type: "Text",
+                label: "Orta Max Asker",
+                description: "Orta için maksimum asker sayısı (0 = limitsiz)",
+                key: "maxTroopsMiddle",
+                default: "0"
             },
             {
                 type: "Checkbox",
@@ -52,18 +66,18 @@ if (isMainThread) {
                 default: true
             },
             {
+                type: "Text",
+                label: "Sağ Max Asker",
+                description: "Sağ flank için maksimum asker sayısı (0 = limitsiz)",
+                key: "maxTroopsRight",
+                default: "0"
+            },
+            {
                 type: "Checkbox",
                 label: "Attack Courtyard",
                 description: "Enable courtyard reinforcement attacks",
                 key: "attackCourtyard",
                 default: true
-            },
-            {
-                type: "Text",
-                label: "Boş Slota Maksimum Asker",
-                description: "Preset'te boş slotlara otomatik doldurulacak maksimum asker sayısı (0 = limitsiz)",
-                key: "maxAutoFillTroops",
-                default: "0"
             },
             { type: "Label", label: "Horse Settings" },
             {
@@ -111,10 +125,12 @@ pluginOptions.transferWeakTroops ??= true
 pluginOptions.transferInterval ??= "10"
 pluginOptions.useTimeSkips ??= true
 pluginOptions.attackLeft ??= true
+pluginOptions.maxTroopsLeft ??= "0"
 pluginOptions.attackMiddle ??= true
+pluginOptions.maxTroopsMiddle ??= "0"
 pluginOptions.attackRight ??= true
+pluginOptions.maxTroopsRight ??= "0"
 pluginOptions.attackCourtyard ??= true
-pluginOptions.maxAutoFillTroops ??= "0"
 pluginOptions.useGamePreset ??= false
 pluginOptions.presetID ??= 0
 pluginOptions.maxWaves ??= 3
@@ -603,10 +619,10 @@ const startLogic = async () => {
                                 }
 
                                 let currentMax = maxTroopFlank;
-                                // Apply user-defined auto-fill limit if set
-                                const userLimit = Number(pluginOptions.maxAutoFillTroops) || 0;
-                                if (userLimit > 0) {
-                                    currentMax = Math.min(currentMax, userLimit);
+                                // Apply user-defined auto-fill limit if set (Sol)
+                                const userLimitLeft = Number(pluginOptions.maxTroopsLeft) || 0;
+                                if (userLimitLeft > 0) {
+                                    currentMax = Math.min(currentMax, userLimitLeft);
                                 }
 
                                 wave.L.U.forEach((unitSlot, i) => {
@@ -633,10 +649,10 @@ const startLogic = async () => {
                                 }
 
                                 let currentMax = maxTroopFlank;
-                                // Apply user-defined auto-fill limit if set
-                                const userLimit = Number(pluginOptions.maxAutoFillTroops) || 0;
-                                if (userLimit > 0) {
-                                    currentMax = Math.min(currentMax, userLimit);
+                                // Apply user-defined auto-fill limit if set (Sağ)
+                                const userLimitRight = Number(pluginOptions.maxTroopsRight) || 0;
+                                if (userLimitRight > 0) {
+                                    currentMax = Math.min(currentMax, userLimitRight);
                                 }
 
                                 wave.R.U.forEach((unitSlot, i) => {
@@ -663,10 +679,10 @@ const startLogic = async () => {
                                 }
 
                                 let currentMax = maxTroopFront;
-                                // Apply user-defined auto-fill limit if set
-                                const userLimit = Number(pluginOptions.maxAutoFillTroops) || 0;
-                                if (userLimit > 0) {
-                                    currentMax = Math.min(currentMax, userLimit);
+                                // Apply user-defined auto-fill limit if set (Orta)
+                                const userLimitMiddle = Number(pluginOptions.maxTroopsMiddle) || 0;
+                                if (userLimitMiddle > 0) {
+                                    currentMax = Math.min(currentMax, userLimitMiddle);
                                 }
 
                                 wave.M.U.forEach((unitSlot, i) => {
