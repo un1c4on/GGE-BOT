@@ -483,8 +483,8 @@ const startLogic = async () => {
             let totalStrong = availableTroops.reduce((a, b) => a + b[1], 0);
 
             if (totalStrong < minTroopCount) {
-                console.warn(`[${name}] ⚠️ Yeteri kadar asker veya alet yok (${totalStrong}/${minTroopCount}). 2 dakika bekleniyor...`)
-                await sleep(120000);  // 2 dakika bekle - spam önleme
+                console.log(`[${name}] Yeteri kadar asker veya alet yok (${totalStrong}/${minTroopCount}). 5 saniye sonra tekrar kontrol edilecek...`)
+                await sleep(5000);
                 continue;
             }
 
