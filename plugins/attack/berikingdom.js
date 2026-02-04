@@ -483,8 +483,8 @@ const startLogic = async () => {
             let totalStrong = availableTroops.reduce((a, b) => a + b[1], 0);
 
             if (totalStrong < minTroopCount) {
-                console.log(`[${name}] Not enough troops (${totalStrong}/${minTroopCount}). Checking inventory in 5s...`)
-                await sleep(5000);
+                console.warn(`[${name}] ⚠️ Yeteri kadar asker veya alet yok (${totalStrong}/${minTroopCount}). 2 dakika bekleniyor...`)
+                await sleep(120000);  // 2 dakika bekle - spam önleme
                 continue;
             }
 
@@ -610,7 +610,8 @@ const startLogic = async () => {
                             }
                         }
 
-                        // Fill each wave independently
+                        // Fill each wave independently - SMART ALLOCATION
+                        // Küçük limitli kanatları önce doldur, böylece büyük limitli kanat kalan askerleri alır
                         attackInfo.A.forEach((wave, waveIndex) => {
                             if (waveIndex >= waveCount) return;
 
@@ -621,95 +622,57 @@ const startLogic = async () => {
                             const maxTroopFlank = Math.max(0, rawFlank - (rawFlank > 15 ? 10 : 1))
                             const maxTroopFront = Math.max(0, rawFront - (rawFront > 15 ? 10 : 1))
 
+                            // Kullanıcı limitleri
+                            const userLimitLeft = Number(pluginOptions.maxTroopsLeft) || 0;
+                            const userLimitMiddle = Number(pluginOptions.maxTroopsMiddle) || 0;
+                            const userLimitRight = Number(pluginOptions.maxTroopsRight) || 0;
+
+                            // Kanatları hazırla (aktif olanlar)
+                            const flanks = [];
+
                             if (doLeft) {
-                                // Check if flank has tools but no troops
                                 const hasTools = wave.L.T && wave.L.T.some(slot => slot && slot[0] !== -1 && slot[1] > 0);
                                 const hasTroops = wave.L.U && wave.L.U.some(slot => slot && slot[0] !== -1 && slot[1] > 0);
-
-                                // If has tools but no troops, reset slots for auto-fill
                                 if (hasTools && !hasTroops && wave.L.U.length > 0) {
-                                    wave.L.U.forEach(slot => {
-                                        if (slot) {
-                                            slot[0] = -1;
-                                            slot[1] = 0;
-                                        }
-                                    });
+                                    wave.L.U.forEach(slot => { if (slot) { slot[0] = -1; slot[1] = 0; } });
                                 }
-
-                                let currentMax = maxTroopFlank;
-                                // Apply user-defined auto-fill limit if set (Sol)
-                                const userLimitLeft = Number(pluginOptions.maxTroopsLeft) || 0;
-                                if (userLimitLeft > 0) {
-                                    currentMax = Math.min(currentMax, userLimitLeft);
-                                }
-
-                                wave.L.U.forEach((unitSlot, i) => {
-                                    if (currentMax <= 0) return;
-                                    let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
-                                        attackerMeleeTroops : attackerRangeTroops, currentMax);
-                                    currentMax -= assigned;
-                                });
-                            }
-
-                            if (doRight) {
-                                // Check if flank has tools but no troops
-                                const hasTools = wave.R.T && wave.R.T.some(slot => slot && slot[0] !== -1 && slot[1] > 0);
-                                const hasTroops = wave.R.U && wave.R.U.some(slot => slot && slot[0] !== -1 && slot[1] > 0);
-
-                                // If has tools but no troops, reset slots for auto-fill
-                                if (hasTools && !hasTroops && wave.R.U.length > 0) {
-                                    wave.R.U.forEach(slot => {
-                                        if (slot) {
-                                            slot[0] = -1;
-                                            slot[1] = 0;
-                                        }
-                                    });
-                                }
-
-                                let currentMax = maxTroopFlank;
-                                // Apply user-defined auto-fill limit if set (Sağ)
-                                const userLimitRight = Number(pluginOptions.maxTroopsRight) || 0;
-                                if (userLimitRight > 0) {
-                                    currentMax = Math.min(currentMax, userLimitRight);
-                                }
-
-                                wave.R.U.forEach((unitSlot, i) => {
-                                    if (currentMax <= 0) return;
-                                    let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
-                                        attackerMeleeTroops : attackerRangeTroops, currentMax);
-                                    currentMax -= assigned;
-                                });
+                                const limit = userLimitLeft > 0 ? Math.min(maxTroopFlank, userLimitLeft) : maxTroopFlank;
+                                flanks.push({ side: 'L', slots: wave.L.U, limit: limit });
                             }
 
                             if (doMiddle) {
-                                // Check if middle has tools but no troops
                                 const hasTools = wave.M.T && wave.M.T.some(slot => slot && slot[0] !== -1 && slot[1] > 0);
                                 const hasTroops = wave.M.U && wave.M.U.some(slot => slot && slot[0] !== -1 && slot[1] > 0);
-
-                                // If has tools but no troops, reset slots for auto-fill
                                 if (hasTools && !hasTroops && wave.M.U.length > 0) {
-                                    wave.M.U.forEach(slot => {
-                                        if (slot) {
-                                            slot[0] = -1;
-                                            slot[1] = 0;
-                                        }
-                                    });
+                                    wave.M.U.forEach(slot => { if (slot) { slot[0] = -1; slot[1] = 0; } });
                                 }
+                                const limit = userLimitMiddle > 0 ? Math.min(maxTroopFront, userLimitMiddle) : maxTroopFront;
+                                flanks.push({ side: 'M', slots: wave.M.U, limit: limit });
+                            }
 
-                                let currentMax = maxTroopFront;
-                                // Apply user-defined auto-fill limit if set (Orta)
-                                const userLimitMiddle = Number(pluginOptions.maxTroopsMiddle) || 0;
-                                if (userLimitMiddle > 0) {
-                                    currentMax = Math.min(currentMax, userLimitMiddle);
+                            if (doRight) {
+                                const hasTools = wave.R.T && wave.R.T.some(slot => slot && slot[0] !== -1 && slot[1] > 0);
+                                const hasTroops = wave.R.U && wave.R.U.some(slot => slot && slot[0] !== -1 && slot[1] > 0);
+                                if (hasTools && !hasTroops && wave.R.U.length > 0) {
+                                    wave.R.U.forEach(slot => { if (slot) { slot[0] = -1; slot[1] = 0; } });
                                 }
+                                const limit = userLimitRight > 0 ? Math.min(maxTroopFlank, userLimitRight) : maxTroopFlank;
+                                flanks.push({ side: 'R', slots: wave.R.U, limit: limit });
+                            }
 
-                                wave.M.U.forEach((unitSlot, i) => {
+                            // Küçük limitten büyüğe sırala (önce küçük limitli kanatlar doldurulur)
+                            flanks.sort((a, b) => a.limit - b.limit);
+
+                            // Sırayla doldur
+                            flanks.forEach(flank => {
+                                let currentMax = flank.limit;
+                                flank.slots.forEach((unitSlot, i) => {
                                     if (currentMax <= 0) return;
                                     let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
                                         attackerMeleeTroops : attackerRangeTroops, currentMax);
                                     currentMax -= assigned;
                                 });
-                            }
+                            });
                         })
 
                         // Fill courtyard (if enabled)
@@ -934,9 +897,9 @@ const startLogic = async () => {
                     freeCommander(commander.lordID);
                     await sleep(5000);
                 } else if (attackInfoResult.result == "NO_MORE_TROOPS") {
-                    console.warn(`[${name}] 🛑 Not enough troops. Checking inventory in 5s...`)
+                    console.warn(`[${name}] 🛑 Yeteri kadar asker veya alet yok. 2 dakika bekleniyor...`)
                     freeCommander(commander.lordID);
-                    await sleep(5000);
+                    await sleep(120000);  // 2 dakika bekle - spam önleme
                 } else if (attackInfoResult.result == "PRESET_UNIT_NOT_AVAILABLE") {
                     console.warn(`[${name}] ⏳ Preset'teki askerler envanterde yok. 2 dakika sonra tekrar denenecek...`)
                     freeCommander(commander.lordID);
@@ -950,8 +913,10 @@ const startLogic = async () => {
                     freeCommander(commander.lordID);
                     await sleep(5000);
                 } else {
-                    console.warn(`[${name}] Error: ${attackInfoResult.result}`);
+                    // Bilinmeyen hata kodu - muhtemelen alet veya asker eksikliği
+                    console.warn(`[${name}] ❌ cra Hatası (Kod: ${attackInfoResult.result}) - Alet veya asker eksik olabilir. 2 dakika bekleniyor...`);
                     freeCommander(commander.lordID);
+                    await sleep(120000); // 2 dakika bekle
                 }
             } else if (attackInfoResult && attackInfoResult.AAM) {
                 const soldierCount = attackInfoResult.soldierCount || 0;
