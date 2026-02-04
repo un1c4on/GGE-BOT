@@ -165,19 +165,6 @@ export default function GGEUserTable(props) {
                                         </TableCell>
                                         <TableCell align="right">
                                             <Button size="small" onClick={() => { setLogUser(row); handleLogOpen() }}>{t("Logs")}</Button>
-                                            <Button size="small" onClick={() => {
-                                                // Recruitment logs modal
-                                                const logs = status.recruitmentLogs || [];
-                                                if (logs.length === 0) {
-                                                    alert('Henüz asker basma logu yok');
-                                                    return;
-                                                }
-                                                // Simple alert for now - can be improved with a modal
-                                                const logText = logs.map(l =>
-                                                    `[${l.timestamp}] ${l.areaName} - Unit ${l.unitID}: ${l.amount} adet ${l.success ? '✅' : '❌'} (${l.message})`
-                                                ).join('\n');
-                                                alert(`Asker Basma Logları:\n\n${logText.substring(0, 2000)}`);
-                                            }}>{t("Recruit Logs")}</Button>
                                             <Button size="small" onClick={() => props.onSelectUser(row)}>{t("Settings")}</Button>
                                             <Button size="small" variant="contained" color={state ? "error" : "success"} onClick={() => {
                                                 row.state = !state; props.ws.send(JSON.stringify([ErrorType.Success, ActionType.SetUser, row])); setState(!state)

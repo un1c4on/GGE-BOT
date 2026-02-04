@@ -110,7 +110,7 @@ if (isMainThread) {
 console.log(`[${name}] Plugin Loaded!`)
 
 const { Types, getResourceCastleList, ClientCommands, areaInfoLock, AreaType, KingdomID, getKingdomInfoList, KingdomSkipType, spendSkip } = require('../../protocols')
-const { waitToAttack, getAttackInfo, assignUnit, getAmountSoldiersFlank, getAmountSoldiersFront, getTotalAmountToolsFlank, getTotalAmountToolsFront, getMaxUnitsInReinforcementWave, sleep, boxMullerRandom } = require("../../plugins/attack/attack")
+const { waitToAttack, getAttackInfo, assignUnit, getAmountSoldiersFlank, getAmountSoldiersFront, getTotalAmountToolsFlank, getTotalAmountToolsFront, getMaxUnitsInReinforcementWave, sleep, boxMullerRandom, isNapping } = require("../../plugins/attack/attack")
 const { waitForCommanderAvailable, freeCommander, useCommander, movementEvents } = require("../../plugins/commander")
 const { sendXT, waitForResult, xtHandler, events, botConfig, playerInfo } = require("../../ggebot")
 const { applyPreset } = require("../../plugins/attack/presets")
@@ -240,6 +240,10 @@ function setupWave(wallLevelRequirement, row) {
 // --- TRANSFER LOGIC ---
 const transferTroopsLogic = async () => {
     if (!pluginOptions.transferWeakTroops) return;
+    if (isNapping()) {
+        console.log(`[${name}] Anti-ban nap active, skipping transfer...`);
+        return;
+    }
     if (isTransferring) {
         console.log(`[${name}] Transfer already in progress, skipping...`);
         return;
@@ -412,6 +416,7 @@ const transferTroopsLogic = async () => {
 let cachedSourceCastle = null;
 
 const syncInventoryLogic = async () => {
+    if (isNapping()) return;  // Skip sync during anti-ban nap
     try {
         const rcl = await getResourceCastleList();
         const beriCastleArea = rcl.castles.find(e => e.kingdomID == kid)?.areaInfo.find(e => e.type == AreaType.beriCastle);
@@ -510,8 +515,26 @@ const startLogic = async () => {
 
                 // === PRESET LOGIC ===
                 if (pluginOptions.useGamePreset) {
-                    const presetResult = applyPreset(attackInfo, pluginOptions.presetID, maxWaves);
+                    // Refresh inventory data BEFORE applying preset
+                    const freshSourceCastle = (await ClientCommands.getDetailedCastleList()())
+                        .castles.find(a => a.kingdomID == kid)
+                        ?.areaInfo.find(a => a.areaID == sourceCastleArea.extraData[0]);
+
+                    if (!freshSourceCastle) {
+                        console.warn(`[${name}] Could not get fresh inventory data`);
+                        return { result: "INVENTORY_ERROR" };
+                    }
+
+                    // Apply preset with inventory check
+                    const presetResult = applyPreset(attackInfo, pluginOptions.presetID, maxWaves, freshSourceCastle.unitInventory);
                     if (!presetResult.success) {
+                        if (presetResult.error === "PRESET_UNIT_NOT_AVAILABLE") {
+                            console.warn(`[${name}] ⚠️ Preset'teki askerler envanterde yok!`);
+                            presetResult.missingUnits?.forEach(u => {
+                                console.warn(`[${name}]   - ${u.unitName} (ID: ${u.unitID}): Gerekli ${u.needed}, Mevcut ${u.available}`);
+                            });
+                            return { result: "PRESET_UNIT_NOT_AVAILABLE" };
+                        }
                         console.warn(`[${name}] Preset Error: ${presetResult.error}`);
                         return { result: presetResult.error };
                     }
@@ -525,11 +548,6 @@ const startLogic = async () => {
                         if (presetTroopCount <= 0) {
                             console.log(`[${name}] Preset has no troops, auto-filling with available units...`);
                         }
-
-                        // Refresh inventory data
-                        const freshSourceCastle = (await ClientCommands.getDetailedCastleList()())
-                            .castles.find(a => a.kingdomID == kid)
-                            .areaInfo.find(a => a.areaID == sourceCastleArea.extraData[0]);
 
                         // Build troop lists from FRESH inventory
                         const attackerMeleeTroops = []
@@ -908,16 +926,9 @@ const startLogic = async () => {
                     sendXT("dcl", JSON.stringify({ CD: 1 }));
                     await sleep(5000);
                 } else if (attackInfoResult.result == 313) {
-                    console.error(`[${name}] ❌ Error 313: ATTACK_TOO_MANY_UNITS`);
-                    console.error(`[${name}] This error indicates the total unit count exceeded server limits.`);
-                    console.error(`[${name}] Troubleshooting steps:`);
-                    console.error(`[${name}]   1. Reduce maxWaves in plugin settings`);
-                    console.error(`[${name}]   2. Disable attackCourtyard if you only need wave attacks`);
-                    console.error(`[${name}]   3. Check commander relic bonuses (high bonuses increase limits but may cause variance)`);
-                    console.error(`[${name}]   4. If using tool-only presets, ensure auto-fill isn't over-allocating`);
-                    console.error(`[${name}]   5. Consider using presets with troops pre-defined instead of relying on auto-fill`);
+                    console.error(`[${name}] ❌ Error 313: Too many units / Ön ayarınızda fazla asker var. 2 dakika bekleniyor...`);
                     freeCommander(commander.lordID);
-                    await sleep(30000); // 30s cooldown (config issue, don't retry immediately)
+                    await sleep(120000); // 2 dakika bekle
                 } else if (attackInfoResult.result == "NO_TARGET") {
                     console.log(`[${name}] No target available. Waiting 5s...`)
                     freeCommander(commander.lordID);
@@ -926,6 +937,14 @@ const startLogic = async () => {
                     console.warn(`[${name}] 🛑 Not enough troops. Checking inventory in 5s...`)
                     freeCommander(commander.lordID);
                     await sleep(5000);
+                } else if (attackInfoResult.result == "PRESET_UNIT_NOT_AVAILABLE") {
+                    console.warn(`[${name}] ⏳ Preset'teki askerler envanterde yok. 2 dakika sonra tekrar denenecek...`)
+                    freeCommander(commander.lordID);
+                    await sleep(120000); // 2 dakika bekle
+                } else if (attackInfoResult.result == "INVENTORY_ERROR") {
+                    console.warn(`[${name}] ⚠️ Envanter verisi alınamadı. 30 saniye sonra tekrar denenecek...`)
+                    freeCommander(commander.lordID);
+                    await sleep(30000);
                 } else if (attackInfoResult.result == "NO_TROOPS_ASSIGNED") {
                     console.warn(`[${name}] No troops assigned. Waiting 5s...`)
                     freeCommander(commander.lordID);

@@ -280,6 +280,7 @@ const randomIntFromInterval = (min, max) =>
 const pluginOptions = botConfig.plugins[require('path').basename(__filename).slice(0, -3)] ??= {}
 const attacks = []
 let alreadyRunning = false
+let isNapping = false  // Flag to indicate anti-ban nap mode
 const napTime = 1000 * 60 * 60 * 2
 const waitToAttack = callback => new Promise((resolve, reject) => {
     if (timeTillTimeout == 0) {
@@ -321,7 +322,9 @@ const waitToAttack = callback => new Promise((resolve, reject) => {
                             const timeTillNextHit = 1000 * 60 * 30 - (deltaTimeTillTimeout - deltaLastHitTime)
                             if(timeTillNextHit > 0) {
                                 console.log(`[${name}] Having a ${Math.round(timeTillNextHit / 1000 / 60)} minute nap to prevent ban`)
+                                isNapping = true  // Enable nap mode - stops transfers too
                                 await sleep(timeTillNextHit)
+                                isNapping = false  // Disable nap mode
                             }
                             timeTillTimeout = Date.now() + napTime
                             setTimeTillTimeout.run(timeTillTimeout, botConfig.id)
@@ -363,5 +366,6 @@ module.exports = {
     getAmountSoldiersFront,
     getMaxUnitsInReinforcementWave,
     boxMullerRandom,
-    sleep
+    sleep,
+    isNapping: () => isNapping  // Getter function to check nap status
 }

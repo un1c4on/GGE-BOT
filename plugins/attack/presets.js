@@ -45,9 +45,10 @@ function getPresetOptions() {
  * @param {Object} attackInfo - The attack protocol object (cra payload).
  * @param {String|Number} presetID - The ID of the preset to apply.
  * @param {Number} maxWaves - Maximum number of waves to fill (1-4).
- * @returns {Object} Result object { success: boolean, error?: string }
+ * @param {Array} inventory - Optional: Unit inventory array [{unitID, ammount}, ...]
+ * @returns {Object} Result object { success: boolean, error?: string, missingUnits?: array }
  */
-function applyPreset(attackInfo, presetID, maxWaves) {
+function applyPreset(attackInfo, presetID, maxWaves, inventory = null) {
     if (!attackInfo || !attackInfo.A) return { success: false, error: "Invalid attackInfo" };
 
     // Backend uses 0-based IDs: Slot 1 = ID 0, Slot 2 = ID 1, etc.
@@ -68,6 +69,51 @@ function applyPreset(attackInfo, presetID, maxWaves) {
 
         if (!Array.isArray(armySetup)) {
             return { success: false, error: "INVALID_PRESET_DATA" };
+        }
+
+        // Check if preset units are available in inventory
+        if (inventory && Array.isArray(inventory)) {
+            const missingUnits = [];
+
+            armySetup.forEach((slotData, index) => {
+                if (!Array.isArray(slotData) || slotData.length === 0) return;
+
+                for (let k = 0; k < slotData.length; k += 2) {
+                    const id = slotData[k];
+                    const count = slotData[k + 1];
+                    if (!id || !count) continue;
+
+                    const itemDef = units.find(u => u.wodID == id);
+                    if (!itemDef) continue;
+
+                    // Only check units (not tools)
+                    const isItemUnit = itemDef.role === 'melee' || itemDef.role === 'ranged';
+                    if (!isItemUnit) continue;
+
+                    // Check inventory for this unit
+                    const invItem = inventory.find(inv => inv.unitID == id);
+                    const availableAmount = invItem ? invItem.ammount : 0;
+
+                    // If we need this unit for all waves but don't have enough
+                    const totalNeeded = count * maxWaves;
+                    if (availableAmount < totalNeeded) {
+                        missingUnits.push({
+                            unitID: id,
+                            unitName: itemDef.name || `Unit ${id}`,
+                            needed: totalNeeded,
+                            available: availableAmount
+                        });
+                    }
+                }
+            });
+
+            if (missingUnits.length > 0) {
+                return {
+                    success: false,
+                    error: "PRESET_UNIT_NOT_AVAILABLE",
+                    missingUnits: missingUnits
+                };
+            }
         }
 
         // Clear existing default setup in attackInfo for the waves we are about to fill
