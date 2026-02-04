@@ -885,9 +885,11 @@ const startLogic = async () => {
                 if (attackInfoResult.result == 256) {
                     useCommander(commander.lordID)
                 } else if (attackInfoResult.result == 101) {
+                    // MISSING_UNITS - cra hatası, 2 dakika bekle
+                    console.warn(`[${name}] ⏳ Yeteri kadar asker veya alet yok (cra hatası 101). 2 dakika bekleniyor...`);
                     freeCommander(commander.lordID);
                     sendXT("dcl", JSON.stringify({ CD: 1 }));
-                    await sleep(5000);
+                    await sleep(120000);  // 2 dakika bekle - spam önleme
                 } else if (attackInfoResult.result == 313) {
                     console.error(`[${name}] ❌ Error 313: Too many units / Ön ayarınızda fazla asker var. 2 dakika bekleniyor...`);
                     freeCommander(commander.lordID);
