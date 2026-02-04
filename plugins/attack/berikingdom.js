@@ -897,9 +897,9 @@ const startLogic = async () => {
                     freeCommander(commander.lordID);
                     await sleep(5000);
                 } else if (attackInfoResult.result == "NO_MORE_TROOPS") {
-                    console.warn(`[${name}] 🛑 Yeteri kadar asker veya alet yok. 2 dakika bekleniyor...`)
+                    console.log(`[${name}] Yeteri kadar asker veya alet yok. 5 saniye sonra tekrar kontrol edilecek...`)
                     freeCommander(commander.lordID);
-                    await sleep(120000);  // 2 dakika bekle - spam önleme
+                    await sleep(5000);
                 } else if (attackInfoResult.result == "PRESET_UNIT_NOT_AVAILABLE") {
                     console.warn(`[${name}] ⏳ Preset'teki askerler envanterde yok. 2 dakika sonra tekrar denenecek...`)
                     freeCommander(commander.lordID);
