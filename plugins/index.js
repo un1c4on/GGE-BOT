@@ -12,9 +12,8 @@ dir.forEach(file => {
     
     // Exclude helper files/libraries from being loaded as plugins
     const lowerFile = file.toLowerCase();
-    if (lowerFile.endsWith('presets.js') || 
-        lowerFile.includes('shared') || 
-        lowerFile.endsWith('attack.js')) // attack.js is a library, not a plugin
+    if (lowerFile.endsWith('presets.js') ||
+        lowerFile.includes('shared')) // shared dosyalari helper, plugin degil
         return
 
     let pathSeperator = '/'

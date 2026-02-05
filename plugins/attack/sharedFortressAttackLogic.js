@@ -8,7 +8,7 @@ if (isMainThread)
     }
 
 const { Types, getResourceCastleList, ClientCommands, areaInfoLock, AreaType, KingdomID } = require('../../protocols')
-const { waitToAttack, getAttackInfo, assignUnit, getAmountSoldiersFlank, getMaxUnitsInReinforcementWave, boxMullerRandom, sleep } = require("./attack")
+const { waitToAttack, getAttackInfo, assignUnit, getAmountSoldiersFlank, getMaxUnitsInReinforcementWave, boxMullerRandom, sleep, incrementAttackCounter, hasReachedAttackLimit, getCurrentAttackCount } = require("./attack")
 const { movementEvents, waitForCommanderAvailable, freeCommander, useCommander } = require("../commander")
 const { sendXT, waitForResult, xtHandler, botConfig, playerInfo } = require("../../ggebot")
 const { applyPreset } = require("../../plugins/attack/presets")
@@ -271,28 +271,56 @@ async function fortressHit(name, kid, level, options) {
             const kingdomName = kingdomNames[kid] || `Kingdom ${kid}`;
             const soldierCount = attackInfo.soldierCount;
 
-            console.info(`[${name}] Hitting target C${attackInfo.AAM.UM.L.VIS + 1} ${attackInfo.AAM.M.TA[1]}:${attackInfo.AAM.M.TA[2]} in ${kingdomName} | Troops: ${soldierCount} | Prep: ${attackInfo.executionDuration}s | ${pretty(Math.round(1000000000 * Math.abs(Math.max(0, attackInfo.AAM.M.TT - attackInfo.AAM.M.PT))), 's') + " till impact"}`)
+            // Saldiri sayacini artir
+            const currentHits = incrementAttackCounter()
+
+            console.info(`[${name}] Hitting target C${attackInfo.AAM.UM.L.VIS + 1} ${attackInfo.AAM.M.TA[1]}:${attackInfo.AAM.M.TA[2]} in ${kingdomName} | Troops: ${soldierCount} | Hits: ${currentHits} | Prep: ${attackInfo.executionDuration}s | ${pretty(Math.round(1000000000 * Math.abs(Math.max(0, attackInfo.AAM.M.TT - attackInfo.AAM.M.PT))), 's') + " till impact"}`)
+
+            // Hedef limite ulasildi mi kontrol et
+            if (hasReachedAttackLimit()) {
+                const targetHits = parseInt(pluginOptions.attackLimitTarget) || 0
+                console.warn(`[${name}] Hedef saldiri limitine ulasildi (${currentHits}/${targetHits}). Saldiri durduruluyor.`)
+                return false // Saldiri dongusunu durdur
+            }
+
             return true
         } catch (e) {
             freeCommander(commander.lordID)
             switch (e) {
                 case "NO_MORE_TROOPS":
-                    await new Promise(resolve => movementEvents.on("return", function self(movementInfo) {
-                        if (movementInfo.movement.movement.kingdomID != kid)
-                            return
-                        if (movementInfo.movement.movement.targetAttack.extraData[0] != sourceCastleArea.extraData[0])
-                            return
-
-                        movementEvents.off("return", self)
-                        resolve()
-                    }))
-                    return true
+                    // Sarı log - tek sefer göster, sonra sessiz 5sn tarama
+                    console.warn(`[${name}] Envanterde asker yok, bekleniyor...`)
+                    // Sessiz döngü: 5 saniyede bir envanter kontrolü
+                    while (true) {
+                        await sleep(5 * 1000) // 5 saniye bekle
+                        const checkCastle = (await ClientCommands.getDetailedCastleList()())
+                            .castles.find(a => a.kingdomID == kid)
+                            ?.areaInfo.find(a => a.areaID == sourceCastleArea.extraData[0])
+                        if (checkCastle && checkCastle.unitInventory) {
+                            let totalTroops = 0
+                            checkCastle.unitInventory.forEach(u => {
+                                const unitInfo = units.find(obj => u.unitID == obj.wodID)
+                                if (unitInfo && unitInfo.fightType == 0) {
+                                    totalTroops += u.ammount
+                                }
+                            })
+                            if (totalTroops >= minTroopCount) {
+                                break // Asker bulundu, döngüden çık
+                            }
+                        }
+                    }
+                    return true // Saldırıya devam
                 case "LORD_IS_USED":
                     useCommander(commander.lordID)
                 case "COOLING_DOWN":
                 case "TIMED_OUT":
                 case "CANT_START_NEW_ARMIES":
                     return true
+                case "MISSING_UNITS":
+                    // Kırmızı log - CRA sunucu tarafından reddedildi
+                    console.error(`[${name}] Asker veya alet eksik, saldırı durduruluyor 3 dakika`)
+                    await sleep(3 * 60 * 1000) // 3 dakika bekle
+                    return true // Retry
                 default:
                     throw e
             }

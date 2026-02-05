@@ -116,9 +116,37 @@ export default function UserSettings(props) {
                         </Box>
                     </Paper>
                 </Box>
+            ) : activeTab === 'attack' ? (
+                <Box>
+                    {props.plugins.filter(p => p.key === 'attack').map(plugin => (
+                        <Box key={plugin.key}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 4 }}>
+                                <Box>
+                                    <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#ff9800' }}>{t("SALDIRI AYARLARI")}</Typography>
+                                    <Typography color="gray" variant="body1">{t("Saldiri gecikme, limit ve flank ayarlari")}</Typography>
+                                </Box>
+                            </Box>
+                            <Divider sx={{ mb: 4, opacity: 0.1 }} />
+
+                            {/* Gunluk Saldiri Sayaci */}
+                            <Paper sx={{ p: 3, mb: 4, bgcolor: 'rgba(255, 152, 0, 0.1)', border: '1px solid #ff9800', borderRadius: 2 }}>
+                                <Typography variant="h6" sx={{ color: '#ff9800', mb: 1 }}>{t("Gunluk Saldiri Sayaci")}</Typography>
+                                <Typography variant="h3" sx={{ fontWeight: 'bold' }}>
+                                    {props.userStatus?.attackStats?.currentHits || 0}
+                                </Typography>
+                                <Typography variant="caption" color="gray">{t("Sifirlama: Her gun 02:00 (CET 00:00)")}</Typography>
+                            </Paper>
+
+                            {/* Attack Settings */}
+                            <Box sx={{ bgcolor: 'rgba(255,255,255,0.02)', p: 4, borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
+                                <PluginsTable singlePlugin={plugin} plugins={[plugin]} userPlugins={plugins} onChange={e => setPlugins(e)} language={language} />
+                            </Box>
+                        </Box>
+                    ))}
+                </Box>
             ) : (
                 <Box>
-                    {props.plugins.filter(p => p.key === activeTab && p.key !== 'presets').map(plugin => (
+                    {props.plugins.filter(p => p.key === activeTab && p.key !== 'presets' && p.key !== 'attack').map(plugin => (
                         <Box key={plugin.key}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 4 }}>
                                 <Box>

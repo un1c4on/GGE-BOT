@@ -95,6 +95,16 @@ const spendSkip = (time, strategy = 0) => {
     return selected[0]
 }
 
+// Skip miktarını kontrol et
+const getSkipCount = (skipType) => {
+    return skips[skipType] || 0
+}
+
+// Tüm skip miktarlarını döndür
+const getAllSkips = () => {
+    return { ...skips }
+}
+
 const KingdomSkipType = Object.freeze({
     sendResource: 2,
     sendTroops: 1,
@@ -1153,6 +1163,8 @@ module.exports = {
     MinuteSkipType,
     KingdomSkipType,
     spendSkip,
+    getSkipCount,
+    getAllSkips,
     getResourceCastleList,
     getKingdomInfoList,
     getEventList,

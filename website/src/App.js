@@ -15,6 +15,7 @@ import ExpandMore from '@mui/icons-material/ExpandMore'
 import AccountCircleIcon from '@mui/icons-material/AccountCircle'
 import ExtensionIcon from '@mui/icons-material/Extension'
 import LanguageIcon from '@mui/icons-material/Language'
+import GpsFixedIcon from '@mui/icons-material/GpsFixed'
 
 import GGEUserTable from './modules/GGEUsersTable'
 import UserSettings from './modules/userSettings'
@@ -147,10 +148,15 @@ function App() {
                         <ListItemText primary={t("Account Details")} primaryTypographyProps={{ fontSize: '0.85rem' }} />
                       </ListItemButton>
 
+                      <ListItemButton selected={activeView === 'settings' && settingsTab === 'attack'} onClick={() => { setActiveView('settings'); setSettingsTab('attack'); }} sx={{ borderRadius: '10px 0 0 10px', mt: 0.5, bgcolor: 'rgba(144, 202, 249, 0.08)' }}>
+                        <ListItemIcon><GpsFixedIcon sx={{ fontSize: 20, color: '#ff9800' }} /></ListItemIcon>
+                        <ListItemText primary={t("SALDIRI AYARLARI")} primaryTypographyProps={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#ff9800' }} />
+                      </ListItemButton>
+
                       <Divider sx={{ my: 1, mx: 2, opacity: 0.1 }} />
                       <Typography variant="caption" sx={{ px: 2, color: 'gray', fontWeight: 'bold' }}>{t("ACTIVE PLUGINS")}</Typography>
 
-                      {plugins.filter(p => p.key !== 'presets').map((plugin) => (
+                      {plugins.filter(p => p.key !== 'presets' && p.key !== 'attack').map((plugin) => (
                         <ListItemButton
                           key={plugin.key}
                           selected={activeView === 'settings' && settingsTab === plugin.key}

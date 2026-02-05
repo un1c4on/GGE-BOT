@@ -220,11 +220,11 @@ async function start() {
 
   const plugins = pluginData
     .filter(e => !e[1].hidden)
-    .map(e => ({ key: path.basename(e[0]), filename: e[0], name: e[1].name, description: e[1].description, force: e[1].force, pluginOptions: e[1]?.pluginOptions }))
+    .map(e => ({ key: path.basename(e[0]).replace('.js', ''), filename: e[0], name: e[1].name, description: e[1].description, force: e[1].force, pluginOptions: e[1]?.pluginOptions }))
 
   const filteredPlugins = plugins
     .filter(e => e.key !== 'presets') // Hide presets helper from UI
-    .sort((a, b) => (a.force ?? 0) - (b.force ?? 0))
+    .sort((a, b) => (b.force ?? 0) - (a.force ?? 0)) // force: true olanlar en basa
 
   const loginCheck = async userId => {
     if (!userId || isNaN(userId)) return false;

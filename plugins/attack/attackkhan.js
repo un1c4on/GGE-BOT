@@ -75,7 +75,7 @@ if (isMainThread) {
 
 const err = require("../../err.json")
 const { Types, getResourceCastleList, ClientCommands, areaInfoLock, AreaType, spendSkip, KingdomID } = require('../../protocols')
-const { waitToAttack, getAttackInfo, assignUnit, getTotalAmountToolsFlank, getTotalAmountToolsFront, getAmountSoldiersFlank, getAmountSoldiersFront, getMaxUnitsInReinforcementWave } = require("./attack")
+const { waitToAttack, getAttackInfo, assignUnit, getTotalAmountToolsFlank, getTotalAmountToolsFront, getAmountSoldiersFlank, getAmountSoldiersFront, getMaxUnitsInReinforcementWave, incrementAttackCounter, hasReachedAttackLimit } = require("./attack")
 const { movementEvents, waitForCommanderAvailable, freeCommander, useCommander } = require("../commander")
 const { sendXT, waitForResult, xtHandler, events, playerInfo, botConfig } = require("../../ggebot")
 const { getCommanderStats } = require("../../getEquipment")
@@ -453,11 +453,21 @@ events.on("eventStart", async eventInfo => {
             if (attackInfo.result != 0)
                 throw err[attackInfo.result]
 
-            console.info(`[${name}] Hitting target C${attackInfo.AAM.UM.L.VIS + 1} ${attackInfo.AAM.M.TA[1]}:${attackInfo.AAM.M.TA[2]} ${pretty(Math.round(1000000000 * Math.abs(Math.max(0, attackInfo.AAM.M.TT - attackInfo.AAM.M.PT))), 's') + " till impact"}`)
+            // Saldiri sayacini artir
+            const currentHits = incrementAttackCounter()
+            console.info(`[${name}] Hitting target C${attackInfo.AAM.UM.L.VIS + 1} ${attackInfo.AAM.M.TA[1]}:${attackInfo.AAM.M.TA[2]} | Hits: ${currentHits} | ${pretty(Math.round(1000000000 * Math.abs(Math.max(0, attackInfo.AAM.M.TT - attackInfo.AAM.M.PT))), 's') + " till impact"}`)
+
+            // Hedef limite ulasildi mi kontrol et
+            if (hasReachedAttackLimit()) {
+                const targetHits = parseInt(pluginOptions.attackLimitTarget) || 0
+                console.warn(`[${name}] Hedef saldiri limitine ulasildi (${currentHits}/${targetHits}). Saldiri durduruluyor.`)
+                quit = true
+            }
         } catch (e) {
             freeCommander(commander.lordID)
             switch (e) {
                 case "NO_MORE_TROOPS":
+                    console.warn(`[${name}] Envanterde asker yok, bekleniyor...`)
                     await new Promise(resolve => movementEvents.on("return", function self(movementInfo) {
                         if (movementInfo.movement.movement.kingdomID != kid)
                             return
@@ -468,6 +478,10 @@ events.on("eventStart", async eventInfo => {
                         resolve()
                     }))
                     break
+                case "MISSING_UNITS":
+                    console.error(`[${name}] Asker veya alet eksik, saldırı durduruluyor 3 dakika`)
+                    await new Promise(r => setTimeout(r, 3 * 60 * 1000))
+                    break
                 case "LORD_IS_USED":
                     useCommander(commander.lordID)
                 case "COOLING_DOWN":
@@ -475,7 +489,7 @@ events.on("eventStart", async eventInfo => {
                 case "CANT_START_NEW_ARMIES":
                     break
                 default:
-                    console.error(e)
+                    console.error(`[${name}] Hata: ${e}`)
                     quit = true
             }
         }

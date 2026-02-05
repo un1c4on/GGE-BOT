@@ -90,7 +90,7 @@ if (isMainThread)
     }
 
 const { Types, getResourceCastleList, ClientCommands, areaInfoLock, AreaType, spendSkip, KingdomID } = require('../../protocols')
-const { waitToAttack, getAttackInfo, assignUnit, getTotalAmountToolsFlank, getTotalAmountToolsFront, getAmountSoldiersFlank, getAmountSoldiersFront, getMaxUnitsInReinforcementWave } = require("./attack")
+const { waitToAttack, getAttackInfo, assignUnit, getTotalAmountToolsFlank, getTotalAmountToolsFront, getAmountSoldiersFlank, getAmountSoldiersFront, getMaxUnitsInReinforcementWave, incrementAttackCounter, hasReachedAttackLimit } = require("./attack")
 const { movementEvents, waitForCommanderAvailable, freeCommander, useCommander } = require('../commander')
 const { sendXT, waitForResult, xtHandler, events, playerInfo, botConfig } = require('../../ggebot')
 const { getCommanderStats } = require('../../getEquipment')
@@ -265,16 +265,31 @@ events.on("eventStart", async eventInfo => {
             if (attackInfoResult.result != 0) {
                 if (attackInfoResult.result == 256) useCommander(commander.lordID) // LORD_IS_USED
             } else {
-                console.info(`[${name}] Attack sent to ${attackInfoResult.AAM.M.TA[1]}:${attackInfoResult.AAM.M.TA[2]}`)
+                // Saldiri sayacini artir
+                const currentHits = incrementAttackCounter(pluginOptions)
+                console.info(`[${name}] Attack sent to ${attackInfoResult.AAM.M.TA[1]}:${attackInfoResult.AAM.M.TA[2]} | Hits: ${currentHits}`)
+
+                // Hedef limite ulasildi mi kontrol et
+                if (hasReachedAttackLimit()) {
+                    const targetHits = parseInt(pluginOptions.attackLimitTarget) || 0
+                    console.warn(`[${name}] Hedef saldiri limitine ulasildi (${currentHits}/${targetHits}). Saldiri durduruluyor.`)
+                    freeCommander(commander.lordID)
+                    return // Donguden cik
+                }
             }
             freeCommander(commander.lordID)
             await new Promise(r => setTimeout(r, 4000))
         } catch (e) {
             freeCommander(commander.lordID)
             if (e === "NO_MORE_TROOPS") {
+                console.warn(`[${name}] Envanterde asker yok, bekleniyor...`)
+                // Sessiz döngü: 5 saniyede bir kontrol
                 await new Promise(resolve => movementEvents.once("return", resolve))
+            } else if (e === "MISSING_UNITS") {
+                console.error(`[${name}] Asker veya alet eksik, saldırı durduruluyor 3 dakika`)
+                await new Promise(r => setTimeout(r, 3 * 60 * 1000))
             } else {
-                console.error(`[${name}] Error:`, e)
+                console.error(`[${name}] Hata: ${e}`)
                 await new Promise(r => setTimeout(r, 5000))
             }
         }

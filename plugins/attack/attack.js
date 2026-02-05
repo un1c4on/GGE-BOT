@@ -1,11 +1,15 @@
 const { isMainThread } = require('node:worker_threads')
-const name = "Attack"
+const name = "ATTACK"
 if (isMainThread) {
     module.exports = {
-        name: name,
-        description: "Handles Hits",
+        name: "SALDIRI AYARLARI",
+        description: "Saldiri gecikme, limit ve flank ayarlari",
         force: true,
         pluginOptions: [
+            {
+                type: "Label",
+                label: "Saldiri Gecikme Ayarlari"
+            },
             {
                 type: "Text",
                 label: "Attack Delay (Seconds)",
@@ -19,36 +23,31 @@ if (isMainThread) {
                 default: "1.0"
             },
             {
+                type: "Label",
+                label: "Saldiri Limiti"
+            },
+            {
+                type: "Checkbox",
+                label: "Hedef saldiri limiti aktif",
+                key: "attackLimitEnabled",
+                default: false
+            },
+            {
                 type: "Text",
-                label: "Com White List",
-                key: "commanderWhiteList"
-            },
-            {
-                type: "Checkbox",
-                label: "Attack Left Flank",
-                key: "attackLeft",
-                default: true
-            },
-            {
-                type: "Checkbox",
-                label: "Attack Middle",
-                key: "attackMiddle",
-                default: true
-            },
-            {
-                type: "Checkbox",
-                label: "Attack Right Flank",
-                key: "attackRight",
-                default: true
+                label: "Hedef saldiri sayisi",
+                key: "attackLimitTarget",
+                default: "1000"
             }
         ]
     }
     return
 }
 const { DatabaseSync } = require('node:sqlite')
-const { botConfig, playerInfo } = require('../../ggebot')
+const { botConfig, playerInfo, syncStatus } = require('../../ggebot')
 const { getPermanentCastle } = require('../../protocols')
 const stables = require('../../items/horses.json')
+const ActionType = require('../../actions.json')
+const { parentPort } = require('node:worker_threads')
 
 const userDatabase = new DatabaseSync('./user.db', { timeout: 1000 * 60 })
 
@@ -60,8 +59,20 @@ userDatabase.exec(
 	PRIMARY KEY("id")
 )`)
 
+// AttackStats tablosu - saldiri sayaci icin
+userDatabase.exec(
+  `CREATE TABLE IF NOT EXISTS "AttackStats" (
+    "botId" INTEGER PRIMARY KEY,
+    "currentHits" INTEGER DEFAULT 0,
+    "lastResetTime" INTEGER DEFAULT 0
+)`)
+
 userDatabase.prepare('INSERT OR IGNORE INTO PlayerInfo (id, timeTillTimeout, lastHitTime) VALUES(?,?,?)')
     .run(botConfig.id, 0, 0)
+
+// AttackStats icin varsayilan deger ekle
+userDatabase.prepare('INSERT OR IGNORE INTO AttackStats (botId, currentHits, lastResetTime) VALUES(?,?,?)')
+    .run(botConfig.id, 0, Date.now())
 
 let {timeTillTimeout, lastHitTime} = userDatabase.prepare('Select timeTillTimeout, lastHitTime From PlayerInfo WHERE id=?')
     .get(botConfig.id)
@@ -71,6 +82,76 @@ lastHitTime = 0
 const setTimeTillTimeout = userDatabase.prepare('UPDATE PlayerInfo SET timeTillTimeout = ? WHERE id = ?')
 
 const setLastHitTime = userDatabase.prepare('UPDATE PlayerInfo SET lastHitTime = ? WHERE id = ?')
+
+// AttackStats prepared statements
+const getAttackStats = userDatabase.prepare('SELECT currentHits, lastResetTime FROM AttackStats WHERE botId = ?')
+const updateAttackStats = userDatabase.prepare('UPDATE AttackStats SET currentHits = ?, lastResetTime = ? WHERE botId = ?')
+
+// Siferlama saati kontrolu (CET 00:00 = Turkiye 02:00)
+const RESET_HOUR = 2 // Turkiye saati
+
+function shouldResetAttackStats(lastResetTime) {
+    const now = new Date()
+    const lastReset = new Date(lastResetTime)
+
+    // Bugunun sifirlama saatini hesapla
+    const todayReset = new Date(now)
+    todayReset.setHours(RESET_HOUR, 0, 0, 0)
+
+    // Eger su an sifirlama saatini gectiyse ve son reset bugunden onceyse
+    return now >= todayReset && lastReset < todayReset
+}
+
+// Saldiri sayacini yukle ve gerekirse sifirla
+let attackStats = getAttackStats.get(botConfig.id) || { currentHits: 0, lastResetTime: Date.now() }
+
+if (shouldResetAttackStats(attackStats.lastResetTime)) {
+    attackStats.currentHits = 0
+    attackStats.lastResetTime = Date.now()
+    updateAttackStats.run(0, attackStats.lastResetTime, botConfig.id)
+    console.log(`[${name}] Gunluk saldiri sayaci sifirlandi (CET 00:00)`)
+}
+
+// Baslangicta mevcut sayaci UI'a gonder
+syncStatus({ attackStats: { currentHits: attackStats.currentHits } })
+console.log(`[${name}] Gunluk saldiri sayaci: ${attackStats.currentHits}`)
+
+// Saldiri sayacini artir ve kaydet
+function incrementAttackCounter() {
+    // Once sifirlama kontrolu
+    if (shouldResetAttackStats(attackStats.lastResetTime)) {
+        attackStats.currentHits = 0
+        attackStats.lastResetTime = Date.now()
+        console.log(`[${name}] Gunluk saldiri sayaci sifirlandi (CET 00:00)`)
+    }
+
+    attackStats.currentHits++
+    updateAttackStats.run(attackStats.currentHits, attackStats.lastResetTime, botConfig.id)
+
+    // UI'a gonder
+    syncStatus({ attackStats: { currentHits: attackStats.currentHits } })
+
+    return attackStats.currentHits
+}
+
+// Hedef limite ulasildi mi kontrol et
+function hasReachedAttackLimit() {
+    // Attack plugin ayarlarini botConfig'den al
+    const attackConfig = botConfig.plugins?.attack || {}
+    const limitEnabled = attackConfig.attackLimitEnabled === true || attackConfig.attackLimitEnabled === "true"
+    const targetHits = parseInt(attackConfig.attackLimitTarget) || 0
+
+    if (!limitEnabled || targetHits <= 0) {
+        return false
+    }
+
+    return attackStats.currentHits >= targetHits
+}
+
+// Mevcut saldiri sayisini getir
+function getCurrentAttackCount() {
+    return attackStats.currentHits
+}
 
 const getTotalAmountTools = (e, t, n) =>
     1 === e ? t < 11 ? 10 :
@@ -367,5 +448,8 @@ module.exports = {
     getMaxUnitsInReinforcementWave,
     boxMullerRandom,
     sleep,
-    isNapping: () => isNapping  // Getter function to check nap status
+    isNapping: () => isNapping,  // Getter function to check nap status
+    incrementAttackCounter,
+    hasReachedAttackLimit,
+    getCurrentAttackCount
 }

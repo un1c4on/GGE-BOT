@@ -130,7 +130,14 @@ export const translations = {
         "Network error": "Network error",
         "Cancel": "Cancel",
         "Add": "Add",
-        "Clear Logs": "Clear Logs"
+        "Clear Logs": "Clear Logs",
+        "SALDIRI AYARLARI": "ATTACK SETTINGS",
+        "Saldiri gecikme, limit ve flank ayarlari": "Attack delay, limit and flank settings",
+        "Gunluk Saldiri Sayaci": "Daily Attack Counter",
+        "Sifirlama: Her gun 02:00 (CET 00:00)": "Reset: Every day 02:00 (CET 00:00)",
+        "Saldiri Limiti": "Attack Limit",
+        "Hedef saldiri limiti aktif": "Target attack limit enabled",
+        "Hedef saldiri sayisi": "Target attack count"
     },
     tr: {
         "Dashboard": "Kontrol Paneli",
@@ -263,7 +270,14 @@ export const translations = {
         "Network error": "Ağ hatası",
         "Cancel": "İptal",
         "Add": "Ekle",
-        "Clear Logs": "Günlükleri Temizle"
+        "Clear Logs": "Günlükleri Temizle",
+        "SALDIRI AYARLARI": "SALDIRI AYARLARI",
+        "Saldiri gecikme, limit ve flank ayarlari": "Saldırı gecikme, limit ve flank ayarları",
+        "Gunluk Saldiri Sayaci": "Günlük Saldırı Sayacı",
+        "Sifirlama: Her gun 02:00 (CET 00:00)": "Sıfırlama: Her gün 02:00 (CET 00:00)",
+        "Saldiri Limiti": "Saldırı Limiti",
+        "Hedef saldiri limiti aktif": "Hedef saldırı limiti aktif",
+        "Hedef saldiri sayisi": "Hedef saldırı sayısı"
     }
 };
 

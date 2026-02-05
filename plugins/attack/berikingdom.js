@@ -9,99 +9,138 @@ if (isMainThread) {
         name: name,
         description: "Automated Berimond Attack with Preset Support",
         pluginOptions: [
+            // ═══════════════════════════════════════
+            // KOMUTAN AYARLARI
+            // ═══════════════════════════════════════
+            { type: "Label", label: "⚔️ Komutan Ayarları" },
             {
                 type: "Text",
-                label: "Com White List",
-                description: "Commander range (e.g., 1-3 for commanders 1,2,3)",
+                label: "Komutan Listesi",
+                description: "Kullanılacak komutan aralığı (örn: 1-3)",
                 key: "commanderWhiteList"
             },
-            { type: "Label", label: "Attack Settings" },
+
+            // ═══════════════════════════════════════
+            // TRANSFER AYARLARI
+            // ═══════════════════════════════════════
+            { type: "Label", label: "📦 Transfer Ayarları" },
             {
                 type: "Checkbox",
-                label: "Auto Transfer Troops",
-                description: "Automatically send troops from Kingdom 3",
+                label: "Otomatik Transfer",
+                description: "Seçilen krallıktan otomatik asker transferi",
                 key: "transferWeakTroops",
                 default: true
             },
             {
+                type: "Select",
+                label: "Kaynak Krallık",
+                description: "Hangi krallıktan asker transfer edilecek",
+                key: "transferSourceKingdom",
+                selection: [
+                    "Çim (Green Empire)",
+                    "Çöl (Burning Sands)",
+                    "Buzul (Everwinter)",
+                    "Ateş (Fire Peaks)"
+                ],
+                default: 3
+            },
+            {
                 type: "Text",
-                label: "Transfer Aralığı (dakika)",
-                description: "Krallık 3'ten asker transferi aralığı (0 = kapalı)",
+                label: "Transfer Aralığı (dk)",
+                description: "Asker transferi kontrol aralığı (0 = kapalı)",
                 key: "transferInterval",
                 default: "10"
             },
+
+            // ═══════════════════════════════════════
+            // SALDIRI POZİSYONLARI
+            // ═══════════════════════════════════════
+            { type: "Label", label: "🎯 Saldırı Pozisyonları" },
             {
                 type: "Checkbox",
-                label: "Attack Left Flank",
-                description: "Enable attacks on left side",
+                label: "Sol Kanat",
+                description: "Sol kanattan saldırı yap",
                 key: "attackLeft",
                 default: true
             },
             {
                 type: "Text",
                 label: "Sol Max Asker",
-                description: "Sol flank için maksimum asker sayısı (0 = limitsiz)",
+                description: "Sol kanat maksimum asker (0 = limitsiz)",
                 key: "maxTroopsLeft",
                 default: "0"
             },
             {
                 type: "Checkbox",
-                label: "Attack Middle",
-                description: "Enable attacks on center",
+                label: "Orta Cephe",
+                description: "Ortadan saldırı yap",
                 key: "attackMiddle",
                 default: true
             },
             {
                 type: "Text",
                 label: "Orta Max Asker",
-                description: "Orta için maksimum asker sayısı (0 = limitsiz)",
+                description: "Orta cephe maksimum asker (0 = limitsiz)",
                 key: "maxTroopsMiddle",
                 default: "0"
             },
             {
                 type: "Checkbox",
-                label: "Attack Right Flank",
-                description: "Enable attacks on right side",
+                label: "Sağ Kanat",
+                description: "Sağ kanattan saldırı yap",
                 key: "attackRight",
                 default: true
             },
             {
                 type: "Text",
                 label: "Sağ Max Asker",
-                description: "Sağ flank için maksimum asker sayısı (0 = limitsiz)",
+                description: "Sağ kanat maksimum asker (0 = limitsiz)",
                 key: "maxTroopsRight",
                 default: "0"
             },
             {
                 type: "Checkbox",
-                label: "Attack Courtyard",
-                description: "Enable courtyard reinforcement attacks",
+                label: "Avlu Takviyesi",
+                description: "Avluya takviye askeri gönder",
                 key: "attackCourtyard",
                 default: true
             },
-            { type: "Label", label: "Horse Settings" },
+
+            // ═══════════════════════════════════════
+            // ÖN AYAR (PRESET)
+            // ═══════════════════════════════════════
+            ...presetOptions,
+
+            // ═══════════════════════════════════════
+            // SÜREGEÇ AYARLARI
+            // ═══════════════════════════════════════
+            { type: "Label", label: "⏱️ Süregeç Ayarları" },
             {
                 type: "Checkbox",
-                label: "Use Time Skips",
-                description: "Skip travel and transfer cooldowns",
+                label: "Süregeç Kullan",
+                description: "Seyahat ve transfer bekleme süresini atla (MS5/MS4)",
                 key: "useTimeSkips",
                 default: true
             },
+
+            // ═══════════════════════════════════════
+            // AT AYARLARI
+            // ═══════════════════════════════════════
+            { type: "Label", label: "🐴 At Ayarları" },
             {
                 type: "Checkbox",
-                label: "Use Feather",
-                description: "Use travel speed boosts",
+                label: "Tüy Kullan",
+                description: "Seyahat hızı artırıcısı kullan",
                 key: "useFeather",
                 default: false
             },
             {
                 type: "Checkbox",
-                label: "Use Coin",
-                description: "Use fast recruitment",
+                label: "Altın Kullan",
+                description: "Hızlı asker toplanması için altın at kullan",
                 key: "useCoin",
                 default: false
-            },
-            ...presetOptions
+            }
         ]
     }
     return;
@@ -109,8 +148,8 @@ if (isMainThread) {
 
 console.log(`[${name}] Plugin Loaded!`)
 
-const { Types, getResourceCastleList, ClientCommands, areaInfoLock, AreaType, KingdomID, getKingdomInfoList, KingdomSkipType, spendSkip } = require('../../protocols')
-const { waitToAttack, getAttackInfo, assignUnit, getAmountSoldiersFlank, getAmountSoldiersFront, getTotalAmountToolsFlank, getTotalAmountToolsFront, getMaxUnitsInReinforcementWave, sleep, boxMullerRandom, isNapping } = require("../../plugins/attack/attack")
+const { Types, getResourceCastleList, ClientCommands, areaInfoLock, AreaType, KingdomID, getKingdomInfoList, KingdomSkipType, spendSkip, getSkipCount } = require('../../protocols')
+const { waitToAttack, getAttackInfo, assignUnit, getAmountSoldiersFlank, getAmountSoldiersFront, getTotalAmountToolsFlank, getTotalAmountToolsFront, getMaxUnitsInReinforcementWave, sleep, boxMullerRandom, isNapping, incrementAttackCounter, hasReachedAttackLimit, getCurrentAttackCount } = require("../../plugins/attack/attack")
 const { waitForCommanderAvailable, freeCommander, useCommander, movementEvents } = require("../../plugins/commander")
 const { sendXT, waitForResult, xtHandler, events, botConfig, playerInfo } = require("../../ggebot")
 const { applyPreset } = require("../../plugins/attack/presets")
@@ -123,6 +162,7 @@ pluginOptions.useFeather ??= false
 pluginOptions.useCoin ??= false
 pluginOptions.transferWeakTroops ??= true
 pluginOptions.transferInterval ??= "10"
+pluginOptions.transferSourceKingdom ??= 3  // Default: Fire Peaks (Ateş)
 pluginOptions.useTimeSkips ??= true
 pluginOptions.attackLeft ??= true
 pluginOptions.maxTroopsLeft ??= "0"
@@ -280,13 +320,16 @@ const transferTroopsLogic = async () => {
             await sleep(1000);
             const dcl = await ClientCommands.getDetailedCastleList()()
 
-            // Transfer from Kingdom ID 3
-            const sourceKingdomID = 3;
+            // Transfer from selected Kingdom (0=Çim, 1=Çöl, 2=Buzul, 3=Ateş)
+            const sourceKingdomID = pluginOptions.transferSourceKingdom !== undefined
+                ? Number(pluginOptions.transferSourceKingdom)
+                : 3;
+            const kingdomNames = { 0: "Çim", 1: "Çöl", 2: "Buzul", 3: "Ateş" };
             const sourceCastleList = dcl.castles.find(e => e.kingdomID == sourceKingdomID);
             let sourceCastle = sourceCastleList?.areaInfo[0];
 
             if (sourceCastle) {
-                console.log(`[${name}] Kingdom ${sourceKingdomID} Castle found (ID:${sourceCastle.areaID}). Selecting troops...`)
+                console.log(`[${name}] ${kingdomNames[sourceKingdomID]} (KID:${sourceKingdomID}) kalesinden asker seçiliyor (ID:${sourceCastle.areaID})...`)
                 let transferCandidates = []
                 sourceCastle.unitInventory.forEach(u => {
                     const unitInfo = units.find(obj => u.unitID == obj.wodID)
@@ -297,7 +340,12 @@ const transferTroopsLogic = async () => {
                     }
                 })
 
+                // Menzilli öncelikli sıralama (ranged önce, sonra melee)
                 transferCandidates.sort((a, b) => {
+                    // Önce menzilli askerler
+                    if (a[0].role === 'ranged' && b[0].role !== 'ranged') return -1;
+                    if (a[0].role !== 'ranged' && b[0].role === 'ranged') return 1;
+                    // Aynı türdeyseler güce göre (düşükten yükseğe)
                     const pA = Math.max(Number(a[0].meleeAttack || 0), Number(a[0].rangeAttack || 0));
                     const pB = Math.max(Number(b[0].meleeAttack || 0), Number(b[0].rangeAttack || 0));
                     return pA - pB;
@@ -318,7 +366,7 @@ const transferTroopsLogic = async () => {
                 }
 
                 if (sendTroops.length > 0) {
-                    console.log(`[${name}] Sending Transfer from K${sourceKingdomID}: [${logDetails.join(", ")}]`)
+                    console.log(`[${name}] ${kingdomNames[sourceKingdomID]}'den transfer gönderiliyor: [${logDetails.join(", ")}]`)
                     sendXT("kut", JSON.stringify({ SCID: sourceCastle.areaID, SKID: sourceKingdomID, TKID: kid, CID: -1, A: sendTroops }))
                     let [kutResult, kutCode] = await waitForResult("kut", 10000);
 
@@ -331,8 +379,25 @@ const transferTroopsLogic = async () => {
 
                         if (transferInfo && transferInfo.remainingTime > 0) {
                             console.log(`[${name}] Found cooldown: ${transferInfo.remainingTime}s`);
-                            console.log(`[${name}] Skipping cooldown with MS5...`);
-                            await ClientCommands.getMinuteSkipKingdom("MS5", kid, KingdomSkipType.sendTroops)();
+
+                            // Süregeç yönetimi: MS5 (1 saat) yoksa MS4 (30 dk) 2 tane kullan
+                            const ms5Count = getSkipCount("MS5");
+                            const ms4Count = getSkipCount("MS4");
+
+                            if (ms5Count > 0) {
+                                console.log(`[${name}] MS5 (1 saat) kullanılıyor...`);
+                                await ClientCommands.getMinuteSkipKingdom("MS5", kid, KingdomSkipType.sendTroops)();
+                            } else if (ms4Count >= 2) {
+                                console.log(`[${name}] MS5 yok, MS4 (30 dk) x2 kullanılıyor...`);
+                                await ClientCommands.getMinuteSkipKingdom("MS4", kid, KingdomSkipType.sendTroops)();
+                                await sleep(1000);
+                                await ClientCommands.getMinuteSkipKingdom("MS4", kid, KingdomSkipType.sendTroops)();
+                            } else if (ms4Count >= 1) {
+                                console.log(`[${name}] Sadece 1 adet MS4 var, kullanılıyor...`);
+                                await ClientCommands.getMinuteSkipKingdom("MS4", kid, KingdomSkipType.sendTroops)();
+                            } else {
+                                console.warn(`[${name}] Süregeç bulunamadı (MS5: ${ms5Count}, MS4: ${ms4Count})`);
+                            }
 
                             // Wait for server to update
                             await sleep(3000);
@@ -385,24 +450,38 @@ const transferTroopsLogic = async () => {
                     console.log(`[${name}] ✅ Transfer successful!`);
 
                     if (pluginOptions.useTimeSkips) {
-                        console.log(`[${name}] 🔄 Preparing to skip travel time...`);
-                        console.log(`[${name}] 📊 KingdomSkipType.sendTroops = ${KingdomSkipType.sendTroops}`);
+                        console.log(`[${name}] 🔄 Seyahat süresi atlanıyor...`);
 
                         // Wait for server to register the transfer
                         await sleep(3000);
 
-                        console.log(`[${name}] 📤 Sending MS5 skip command...`);
-                        const skipResult = await ClientCommands.getMinuteSkipKingdom("MS5", kid, KingdomSkipType.sendTroops)();
-                        console.log(`[${name}] 📥 Skip result:`, skipResult);
+                        // Süregeç yönetimi: MS5 (1 saat) yoksa MS4 (30 dk) 2 tane kullan
+                        const ms5Count = getSkipCount("MS5");
+                        const ms4Count = getSkipCount("MS4");
+
+                        if (ms5Count > 0) {
+                            console.log(`[${name}] MS5 (1 saat) kullanılıyor...`);
+                            await ClientCommands.getMinuteSkipKingdom("MS5", kid, KingdomSkipType.sendTroops)();
+                        } else if (ms4Count >= 2) {
+                            console.log(`[${name}] MS5 yok, MS4 (30 dk) x2 kullanılıyor...`);
+                            await ClientCommands.getMinuteSkipKingdom("MS4", kid, KingdomSkipType.sendTroops)();
+                            await sleep(1000);
+                            await ClientCommands.getMinuteSkipKingdom("MS4", kid, KingdomSkipType.sendTroops)();
+                        } else if (ms4Count >= 1) {
+                            console.log(`[${name}] Sadece 1 adet MS4 var, kullanılıyor...`);
+                            await ClientCommands.getMinuteSkipKingdom("MS4", kid, KingdomSkipType.sendTroops)();
+                        } else {
+                            console.warn(`[${name}] Süregeç bulunamadı (MS5: ${ms5Count}, MS4: ${ms4Count})`);
+                        }
 
                         // Refresh to confirm
                         await sleep(1000);
-                        const kpi = await getKingdomInfoList();
-                        console.log(`[${name}] ✅ Travel skip completed.`);
+                        const kpiRefresh = await getKingdomInfoList();
+                        console.log(`[${name}] ✅ Seyahat atlaması tamamlandı.`);
                     }
                 }
             } else {
-                console.error(`[${name}] Kingdom ${sourceKingdomID} Castle not found in updated DCL!`)
+                console.error(`[${name}] ${kingdomNames[sourceKingdomID]} (KID:${sourceKingdomID}) kalesi bulunamadı!`)
             }
         }
     } catch (e) {
@@ -885,45 +964,53 @@ const startLogic = async () => {
                 if (attackInfoResult.result == 256) {
                     useCommander(commander.lordID)
                 } else if (attackInfoResult.result == 101) {
-                    // MISSING_UNITS - cra hatası, 2 dakika bekle
-                    console.warn(`[${name}] ⏳ Yeteri kadar asker veya alet yok (cra hatası 101). 2 dakika bekleniyor...`);
+                    // MISSING_UNITS - CRA sunucu tarafından reddedildi
+                    console.error(`[${name}] Asker veya alet eksik, saldırı durduruluyor 3 dakika`);
                     freeCommander(commander.lordID);
                     sendXT("dcl", JSON.stringify({ CD: 1 }));
-                    await sleep(120000);  // 2 dakika bekle - spam önleme
+                    await sleep(3 * 60 * 1000);  // 3 dakika bekle
                 } else if (attackInfoResult.result == 313) {
-                    console.error(`[${name}] ❌ Error 313: Too many units / Ön ayarınızda fazla asker var. 2 dakika bekleniyor...`);
+                    console.error(`[${name}] Çok fazla asker hatası, saldırı durduruluyor 3 dakika`);
                     freeCommander(commander.lordID);
-                    await sleep(120000); // 2 dakika bekle
+                    await sleep(3 * 60 * 1000); // 3 dakika bekle
                 } else if (attackInfoResult.result == "NO_TARGET") {
-                    console.log(`[${name}] No target available. Waiting 5s...`)
                     freeCommander(commander.lordID);
                     await sleep(5000);
                 } else if (attackInfoResult.result == "NO_MORE_TROOPS") {
-                    console.log(`[${name}] Yeteri kadar asker veya alet yok. 5 saniye sonra tekrar kontrol edilecek...`)
+                    console.warn(`[${name}] Envanterde asker yok, bekleniyor...`)
                     freeCommander(commander.lordID);
-                    await sleep(5000);
+                    await sleep(5000); // Sessiz 5sn tarama
                 } else if (attackInfoResult.result == "PRESET_UNIT_NOT_AVAILABLE") {
-                    console.warn(`[${name}] ⏳ Preset'teki askerler envanterde yok. 2 dakika sonra tekrar denenecek...`)
+                    console.warn(`[${name}] Preset'teki askerler envanterde yok, bekleniyor...`)
                     freeCommander(commander.lordID);
-                    await sleep(120000); // 2 dakika bekle
+                    await sleep(5000); // 5 saniye bekle
                 } else if (attackInfoResult.result == "INVENTORY_ERROR") {
-                    console.warn(`[${name}] ⚠️ Envanter verisi alınamadı. 30 saniye sonra tekrar denenecek...`)
+                    console.warn(`[${name}] Envanter verisi alınamadı, bekleniyor...`)
                     freeCommander(commander.lordID);
                     await sleep(30000);
                 } else if (attackInfoResult.result == "NO_TROOPS_ASSIGNED") {
-                    console.warn(`[${name}] No troops assigned. Waiting 5s...`)
+                    console.warn(`[${name}] Asker atanamadı, bekleniyor...`)
                     freeCommander(commander.lordID);
                     await sleep(5000);
                 } else {
-                    // Bilinmeyen hata kodu - muhtemelen alet veya asker eksikliği
-                    console.warn(`[${name}] ❌ cra Hatası (Kod: ${attackInfoResult.result}) - Alet veya asker eksik olabilir. 2 dakika bekleniyor...`);
+                    // Bilinmeyen hata kodu - muhtemelen CRA hatası
+                    console.error(`[${name}] Asker veya alet eksik, saldırı durduruluyor 3 dakika (Kod: ${attackInfoResult.result})`);
                     freeCommander(commander.lordID);
-                    await sleep(120000); // 2 dakika bekle
+                    await sleep(3 * 60 * 1000); // 3 dakika bekle
                 }
             } else if (attackInfoResult && attackInfoResult.AAM) {
                 const soldierCount = attackInfoResult.soldierCount || 0;
-                console.info(`[${name}] Attack sent! Commander #${commander.lordPosition + 1} | Troops: ${soldierCount} | Setup: ${duration}s`)
+                // Saldiri sayacini artir
+                const currentHits = incrementAttackCounter()
+                console.info(`[${name}] Attack sent! Commander #${commander.lordPosition + 1} | Troops: ${soldierCount} | Hits: ${currentHits} | Setup: ${duration}s`)
                 useCommander(commander.lordID)
+
+                // Hedef limite ulasildi mi kontrol et
+                if (hasReachedAttackLimit()) {
+                    const targetHits = parseInt(pluginOptions.attackLimitTarget) || 0
+                    console.warn(`[${name}] Hedef saldiri limitine ulasildi (${currentHits}/${targetHits}). Saldiri durduruluyor.`)
+                    return // Saldiri dongusunu durdur
+                }
             } else {
                 freeCommander(commander.lordID)
             }
