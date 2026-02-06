@@ -45,6 +45,7 @@ class User {
       this.lt = Number(obj.lt)
       this.externalEvent = Boolean(obj?.externalEvent)
       this.server = Number(obj?.server)
+      this.locked = Boolean(obj?.locked)
     }
   }
 export { ActionType, GetActionTypeName, ErrorType, GetErrorTypeName, LogLevel, User }

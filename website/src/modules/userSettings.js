@@ -2,17 +2,20 @@ import * as React from 'react'
 import {
     Checkbox, TextField, Paper, FormControlLabel,
     Select, MenuItem, FormControl, InputLabel, Box, Typography,
-    CircularProgress, Divider, Fab, Zoom, Button, Backdrop
+    CircularProgress, Divider, Fab, Zoom, Button, Backdrop, Alert,
+    IconButton, Tooltip
 } from '@mui/material'
 import SaveIcon from '@mui/icons-material/Save'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import LockIcon from '@mui/icons-material/Lock'
+import LockOpenIcon from '@mui/icons-material/LockOpen'
 
 import { ErrorType, ActionType } from "../types.js"
 import PluginsTable from './pluginsTable'
 import { getTranslation } from '../translations.js'
 
 export default function UserSettings(props) {
-    const { language, activeTab } = props;
+    const { language, activeTab, credentialError, credentialVerifying, clearCredentialError } = props;
     const t = (key) => getTranslation(language, key);
 
     const [loading, setLoading] = React.useState(true);
@@ -24,6 +27,7 @@ export default function UserSettings(props) {
     const [pass, setPass] = React.useState("");
     const [plugins, setPlugins] = React.useState(props.selectedUser.plugins || {});
     const [server, setServer] = React.useState(props.selectedUser.server || "");
+    const [locked, setLocked] = React.useState(props.selectedUser.locked || false);
     const [externalEvent, setExternalEvent] = React.useState(props.selectedUser.externalEvent);
 
     const isNewUser = !props.selectedUser.id;
@@ -73,7 +77,7 @@ export default function UserSettings(props) {
             const hasSettings = Object.keys(val).filter(k => k !== 'state' && k !== 'filename').length > 0;
             if (val && (val.state === true || hasSettings)) activePlugins[key] = val;
         });
-        let obj = { id: props.selectedUser.id, name, pass, server, plugins: activePlugins, externalEvent };
+        let obj = { id: props.selectedUser.id, name, pass, server, locked, plugins: activePlugins, externalEvent };
         if (!isNewUser && pass === "") obj.pass = props.selectedUser.pass;
         props.ws.send(JSON.stringify([ErrorType.Success, isNewUser ? ActionType.AddUser : ActionType.SetUser, obj]));
 
@@ -86,7 +90,7 @@ export default function UserSettings(props) {
     // Track changes
     React.useEffect(() => {
         setHasChanges(true);
-    }, [plugins, name, pass, server, externalEvent]);
+    }, [plugins, name, pass, server, locked, externalEvent]);
 
     if (loading) return (
         <Box sx={{ p: 5, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -100,6 +104,19 @@ export default function UserSettings(props) {
             {activeTab === 'account' ? (
                 <Box>
                     <Typography variant="h4" sx={{ mb: 4, fontWeight: 'bold' }}>{t("Account Settings")}</Typography>
+
+                    {credentialError && (
+                        <Alert severity="error" sx={{ mb: 3 }} onClose={clearCredentialError}>
+                            {credentialError}
+                        </Alert>
+                    )}
+
+                    {credentialVerifying && (
+                        <Alert severity="info" icon={<CircularProgress size={20} />} sx={{ mb: 3 }}>
+                            {t("Oyun sunucusunda doğrulanıyor... Lütfen bekleyin.")}
+                        </Alert>
+                    )}
+
                     <Paper sx={{ p: 4, bgcolor: '#0a1929', border: '1px solid rgba(255,255,255,0.05)' }}>
                         <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
                             <TextField
@@ -115,18 +132,44 @@ export default function UserSettings(props) {
                                 label={t("Password")}
                                 type='password'
                                 value={pass}
-                                onChange={e => setPass(e.target.value)}
+                                onChange={e => { setPass(e.target.value); if (credentialError) clearCredentialError(); }}
                                 variant="outlined"
-                                helperText={t("Oyun şifrenizi değiştirdiyseniz buradan güncelleyin")}
+                                disabled={credentialVerifying}
+                                helperText={t("Oyun şifrenizi değiştirdiyseniz buradan güncelleyin. Sunucudan doğrulanacaktır.")}
                             />
-                            <FormControl fullWidth>
-                                <InputLabel>{t("Server")}</InputLabel>
-                                <Select value={server} label={t("Server")} onChange={e => setServer(e.target.value)}>
-                                    {instances.map((inst, i) => (
-                                        <MenuItem value={inst.id} key={i}>{(langData[inst.instanceLocaId] || inst.instanceLocaId) + ' ' + inst.instanceName}</MenuItem>
-                                    ))}
-                                </Select>
-                            </FormControl>
+                            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                                <FormControl fullWidth>
+                                    <InputLabel>{t("Server")}</InputLabel>
+                                    <Select
+                                        value={server}
+                                        label={t("Server")}
+                                        onChange={e => { setServer(e.target.value); if (credentialError) clearCredentialError(); }}
+                                        disabled={locked || credentialVerifying}
+                                    >
+                                        {instances.map((inst, i) => (
+                                            <MenuItem value={inst.id} key={i}>{(langData[inst.instanceLocaId] || inst.instanceLocaId) + ' ' + inst.instanceName}</MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                                <Tooltip title={locked ? t("Kilidi Aç") : t("Kilitle")}>
+                                    <IconButton
+                                        onClick={() => setLocked(!locked)}
+                                        disabled={credentialVerifying}
+                                        sx={{
+                                            mt: 1,
+                                            color: locked ? '#ff9800' : '#4caf50',
+                                            border: '1px solid',
+                                            borderColor: locked ? 'rgba(255,152,0,0.3)' : 'rgba(76,175,80,0.3)',
+                                            bgcolor: locked ? 'rgba(255,152,0,0.08)' : 'rgba(76,175,80,0.08)',
+                                            '&:hover': {
+                                                bgcolor: locked ? 'rgba(255,152,0,0.15)' : 'rgba(76,175,80,0.15)'
+                                            }
+                                        }}
+                                    >
+                                        {locked ? <LockIcon /> : <LockOpenIcon />}
+                                    </IconButton>
+                                </Tooltip>
+                            </Box>
                             <FormControlLabel control={<Checkbox checked={externalEvent} onChange={e => setExternalEvent(e.target.checked)} />} label={t("External Event (OR/BTH)")} />
                         </Box>
                     </Paper>
@@ -206,7 +249,7 @@ export default function UserSettings(props) {
                     color={justSaved ? "success" : hasChanges ? "warning" : "primary"}
                     variant="extended"
                     onClick={handleSave}
-                    disabled={!hasChanges && !justSaved}
+                    disabled={credentialVerifying || (!hasChanges && !justSaved)}
                     sx={{
                         position: 'fixed',
                         bottom: 40,
@@ -229,8 +272,8 @@ export default function UserSettings(props) {
                         }
                     }}
                 >
-                    {justSaved ? <CheckCircleIcon sx={{ mr: 1 }} /> : <SaveIcon sx={{ mr: 1 }} />}
-                    {justSaved ? t("Saved!") : hasChanges ? t("Save Changes") : t("No Changes")}
+                    {credentialVerifying ? <CircularProgress size={20} sx={{ mr: 1, color: 'white' }} /> : justSaved ? <CheckCircleIcon sx={{ mr: 1 }} /> : <SaveIcon sx={{ mr: 1 }} />}
+                    {credentialVerifying ? t("Doğrulanıyor...") : justSaved ? t("Saved!") : hasChanges ? t("Save Changes") : t("No Changes")}
                 </Fab>
             </Zoom>
         </Box>

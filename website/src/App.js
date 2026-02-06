@@ -48,6 +48,10 @@ function App() {
   const [language, setLanguage] = React.useState(localStorage.getItem('lang') || 'tr');
   const [anchorEl, setAnchorEl] = React.useState(null);
 
+  // Credential Verification States
+  const [credentialError, setCredentialError] = React.useState('');
+  const [credentialVerifying, setCredentialVerifying] = React.useState(false);
+
   // Castle Setup Modal States
   const [showCastleModal, setShowCastleModal] = React.useState(false);
   const [castleStatus, setCastleStatus] = React.useState(null);
@@ -68,6 +72,19 @@ function App() {
         const uList = obj[0].map(e => new User(e));
         setUsers(uList); setPlugins(obj[1]);
         if (uList.length > 0 && !selectedUser) setSelectedUser(uList[0]);
+        // Kayıt başarılı - doğrulama durumunu temizle
+        setCredentialVerifying(false);
+        setCredentialError('');
+      } else if (action === ActionType.SetUser) {
+        if (err !== ErrorType.Success) {
+          // Doğrulama başarısız
+          setCredentialVerifying(false);
+          setCredentialError(obj?.error || 'Doğrulama başarısız');
+        } else if (obj?.verifying) {
+          // Doğrulama devam ediyor
+          setCredentialVerifying(true);
+          setCredentialError('');
+        }
       } else if (action === ActionType.StatusUser) {
         console.debug("Live Status Received:", obj);
         setUsersStatus(prev => ({ ...prev, [obj.id]: obj }));
@@ -349,10 +366,13 @@ function App() {
             <UserSettings
               ws={ws}
               selectedUser={selectedUser}
-              userStatus={usersStatus[selectedUser?.id]} // Canlı statü (Envanter burada)
+              userStatus={usersStatus[selectedUser?.id]}
               plugins={plugins}
               language={language}
               activeTab={settingsTab}
+              credentialError={credentialError}
+              credentialVerifying={credentialVerifying}
+              clearCredentialError={() => setCredentialError('')}
             />
           )}
         </Box>
