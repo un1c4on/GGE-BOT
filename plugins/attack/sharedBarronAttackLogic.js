@@ -12,6 +12,7 @@ const { waitToAttack, getAttackInfo, assignUnit, getAmountSoldiersFlank, getAmou
 const { movementEvents, waitForCommanderAvailable, freeCommander, useCommander } = require("../commander")
 const { sendXT, waitForResult, xtHandler, botConfig, playerInfo } = require("../../ggebot")
 const { applyPreset, clampPresetTroops } = require("../../plugins/attack/presets")
+const { getCommanderStats } = require("../../getEquipment")
 const getAreaCached = require('../../getmap.js')
 const err = require("../../err.json")
 
@@ -21,6 +22,32 @@ const pretty = require('pretty-time')
 const minTroopCount = 50
 
 const troopBlackList = [277]//, 34, 35]
+
+/**
+ * Calculate the server's hard limit for total units in an attack
+ * @param {Number} playerLevel - The player's level
+ * @param {Number} targetLevel - The target barron's level
+ * @param {Number} waveCount - Number of attack waves
+ * @param {Object} commanderStats - Commander stats with relic bonuses
+ * @returns {Number} Maximum safe total units (with 10% safety margin)
+ */
+function getServerHardLimit(playerLevel, targetLevel, waveCount, commanderStats) {
+    const getMaxAttackers = (level) => level <= 69 ? Math.min(260, 5 * level + 8) : 320;
+    const baseFlank = Math.floor(Math.ceil(0.2 * getMaxAttackers(targetLevel)));
+    const baseFront = Math.floor(Math.ceil(getMaxAttackers(targetLevel) - 2 * baseFlank));
+
+    const relicFlankBonus = (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100;
+    const relicFrontBonus = (commanderStats.relicAttackUnitAmountFront ?? 0) / 100;
+
+    const maxFlank = Math.floor(baseFlank * (1 + relicFlankBonus));
+    const maxFront = Math.floor(baseFront * (1 + relicFrontBonus));
+
+    const perWaveTheoretical = (maxFlank * 2) + maxFront;
+    const courtyardTheoretical = Math.round(20 * Math.sqrt(playerLevel) + 50 + 20 * targetLevel);
+    const totalTheoretical = (perWaveTheoretical * waveCount) + courtyardTheoretical;
+
+    return Math.floor(totalTheoretical * 0.90);
+}
 
 function spiralCoordinates(n) {
     if (n === 0) return { x: 0, y: 0 }
@@ -531,6 +558,64 @@ async function barronHit(name, type, kid, options) {
                     } else {
                         attackInfo.RW = [];
                     }
+                }
+
+                // === GLOBAL UNIT LIMIT VALIDATION ===
+                const commanderStats = getCommanderStats(commander);
+                const serverHardLimit = getServerHardLimit(playerInfo.level, level, maxWaves, commanderStats);
+                let currentTotalUnits = countTotalUnits(attackInfo);
+
+                if (currentTotalUnits > serverHardLimit) {
+                    console.warn(`[${name}] ⚠️ Total units (${currentTotalUnits}) exceeds server limit (${serverHardLimit}). Reducing allocation...`);
+
+                    let unitsToReduce = currentTotalUnits - serverHardLimit;
+
+                    // Strategy 1: Reduce courtyard first (least impact on attack effectiveness)
+                    let courtyardReduction = 0;
+                    for (let i = attackInfo.RW.length - 1; i >= 0 && unitsToReduce > 0; i--) {
+                        const slot = attackInfo.RW[i];
+                        if (slot && slot[1] > 0) {
+                            const reduction = Math.min(slot[1], unitsToReduce);
+                            slot[1] -= reduction;
+                            unitsToReduce -= reduction;
+                            courtyardReduction += reduction;
+                            if (slot[1] === 0) slot[0] = -1;
+                        }
+                    }
+
+                    if (courtyardReduction > 0) {
+                        console.log(`[${name}] 📉 Reduced courtyard by ${courtyardReduction} units`);
+                    }
+
+                    // Strategy 2: If still over, reduce wave allocations (back to front, right to left)
+                    if (unitsToReduce > 0) {
+                        let waveReduction = 0;
+                        for (let waveIdx = attackInfo.A.length - 1; waveIdx >= 0 && unitsToReduce > 0; waveIdx--) {
+                            const wave = attackInfo.A[waveIdx];
+                            if (waveIdx >= maxWaves) continue;
+
+                            for (const side of ['R', 'M', 'L']) {
+                                if (!wave[side] || !wave[side].U) continue;
+                                for (let slotIdx = wave[side].U.length - 1; slotIdx >= 0 && unitsToReduce > 0; slotIdx--) {
+                                    const slot = wave[side].U[slotIdx];
+                                    if (slot && slot[1] > 0) {
+                                        const reduction = Math.min(slot[1], unitsToReduce);
+                                        slot[1] -= reduction;
+                                        unitsToReduce -= reduction;
+                                        waveReduction += reduction;
+                                        if (slot[1] === 0) slot[0] = -1;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (waveReduction > 0) {
+                            console.log(`[${name}] 📉 Reduced waves by ${waveReduction} units`);
+                        }
+                    }
+
+                    currentTotalUnits = countTotalUnits(attackInfo);
+                    console.log(`[${name}] ✅ Final unit count after reduction: ${currentTotalUnits}/${serverHardLimit}`);
                 }
 
                 // --- FINAL VALIDATION (Both Preset and Manual) ---
