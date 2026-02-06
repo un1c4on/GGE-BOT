@@ -188,7 +188,56 @@ function applyPreset(attackInfo, presetID, maxWaves, inventory = null) {
     }
 }
 
+/**
+ * Clamps preset troop counts to the current commander's max capacity per side.
+ * Prevents ATTACK_TOO_MANY_UNITS when a preset was saved with a higher-capacity commander.
+ * @param {Object} attackInfo - The attack protocol object
+ * @param {Number} maxFront - Max troops for front/middle position
+ * @param {Number} maxFlank - Max troops for flank positions (left/right)
+ */
+function clampPresetTroops(attackInfo, maxFront, maxFlank) {
+    const maxFrontInt = Math.floor(maxFront);
+    const maxFlankInt = Math.floor(maxFlank);
+    let clamped = false;
+
+    attackInfo.A.forEach(wave => {
+        // Clamp flanks (L, R)
+        ['L', 'R'].forEach(side => {
+            if (!wave[side] || !wave[side].U) return;
+            let total = 0;
+            wave[side].U.forEach(slot => {
+                if (slot && slot[1] > 0) {
+                    const allowed = Math.max(0, maxFlankInt - total);
+                    if (slot[1] > allowed) {
+                        clamped = true;
+                        slot[1] = allowed;
+                    }
+                    total += slot[1];
+                }
+            });
+        });
+
+        // Clamp front (M)
+        if (wave.M && wave.M.U) {
+            let total = 0;
+            wave.M.U.forEach(slot => {
+                if (slot && slot[1] > 0) {
+                    const allowed = Math.max(0, maxFrontInt - total);
+                    if (slot[1] > allowed) {
+                        clamped = true;
+                        slot[1] = allowed;
+                    }
+                    total += slot[1];
+                }
+            });
+        }
+    });
+
+    return clamped;
+}
+
 module.exports = {
     getPresetOptions,
-    applyPreset
+    applyPreset,
+    clampPresetTroops
 };

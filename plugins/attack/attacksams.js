@@ -8,10 +8,25 @@ if (isMainThread) {
     return module.exports = {
         name: name,
         pluginOptions: [
+            // ═══════════════════════════════════════
+            // KOMUTAN AYARLARI
+            // ═══════════════════════════════════════
+            { type: "Label", label: "⚔️ Komutan Ayarları" },
+            {
+                type: "Text",
+                label: "Komutan Listesi",
+                description: "Kullanılacak komutan aralığı (örn: 1-3)",
+                key: "commanderWhiteList"
+            },
+
+            // ═══════════════════════════════════════
+            // ETKİNLİK AYARLARI
+            // ═══════════════════════════════════════
+            { type: "Label", label: "🎯 Etkinlik Ayarları" },
             {
                 type: "Select",
-                label: "Event Difficulty",
-                description: "Choose event difficulty level",
+                label: "Zorluk Seviyesi",
+                description: "Etkinlik zorluk seviyesini seçin",
                 key: "eventDifficulty",
                 selection: [
                     "Easy",
@@ -30,65 +45,71 @@ if (isMainThread) {
             },
             {
                 type: "Text",
-                label: "Com White List",
-                description: "Commander range (e.g., 1-3 for commanders 1,2,3)",
-                key: "commanderWhiteList"
-            },
-            { type: "Label", label: "Horse Settings" },
-            {
-                type: "Checkbox",
-                label: "Use Feather",
-                description: "Use travel speed boosts",
-                key: "useFeather",
-                default: false
+                label: "Puan Limiti",
+                description: "Bu puana ulaşınca otomatik dur (boş = limitsiz)",
+                key: "samsScoreShutoff"
             },
             {
                 type: "Checkbox",
-                label: "Use Coin",
-                description: "Use fast recruitment",
-                key: "useCoin",
-                default: false
-            },
-            {
-                type: "Checkbox",
-                label: "Use Time Skips",
-                description: "Skip camp timers instantly",
-                key: "useTimeSkips",
-                default: false
-            },
-            { type: "Label", label: "Event Settings" },
-            {
-                type: "Checkbox",
-                label: "Lowest value chests first",
-                description: "Prioritize low-value chests",
+                label: "Düşük Değerli Sandıklar Önce",
+                description: "Düşük değerli sandıkları önceliklendir",
                 key: "lowValueChests",
                 default: false
             },
             {
                 type: "Checkbox",
-                label: "No chests",
-                description: "Skip chest collection completely",
+                label: "Sandık Kullanma",
+                description: "Sandık toplamayı tamamen atla",
                 key: "noChests",
+                default: false
+            },
+
+            // ═══════════════════════════════════════
+            // ÖN AYAR (PRESET)
+            // ═══════════════════════════════════════
+            ...presetOptions,
+
+            // ═══════════════════════════════════════
+            // SÜREGEÇ AYARLARI
+            // ═══════════════════════════════════════
+            { type: "Label", label: "⏱️ Süregeç Ayarları" },
+            {
+                type: "Checkbox",
+                label: "Süregeç Kullan",
+                description: "Kamp bekleme süresini anında atla",
+                key: "useTimeSkips",
                 default: false
             },
             {
                 type: "Select",
-                label: "Skip Strategy",
-                description: "How to use time skips efficiently",
+                label: "Süregeç Stratejisi",
+                description: "Süregeçleri nasıl verimli kullanacağını seç",
                 key: "skipStrategy",
                 selection: [
-                    "Smallest First (Save Big Skips)",
-                    "Best Fit (Fastest)"
+                    "Küçükten Başla (Büyükleri Sakla)",
+                    "En Uygun (En Hızlı)"
                 ],
                 default: 0
             },
+
+            // ═══════════════════════════════════════
+            // AT AYARLARI
+            // ═══════════════════════════════════════
+            { type: "Label", label: "🐴 At Ayarları" },
             {
-                type: "Text",
-                label: "Samurai score shutoff",
-                description: "Auto-stop at this score (leave empty for no limit)",
-                key: "samsScoreShutoff"
+                type: "Checkbox",
+                label: "Tüy Kullan",
+                description: "Seyahat hızı artırıcısı kullan",
+                key: "useFeather",
+                default: false
             },
-            ...presetOptions
+            {
+                type: "Checkbox",
+                label: "Altın Kullan",
+                description: "Hızlı seyahat için altın at kullan",
+                key: "useCoin",
+                default: false
+            }
         ]
 
     }
@@ -99,7 +120,7 @@ const { waitToAttack, getAttackInfo, assignUnit, getTotalAmountToolsFlank, getTo
 const { movementEvents, waitForCommanderAvailable, freeCommander, useCommander } = require("../commander")
 const { sendXT, waitForResult, xtHandler, events, playerInfo, botConfig } = require("../../ggebot")
 const { getCommanderStats } = require("../../getEquipment")
-const { applyPreset } = require("../../plugins/attack/presets")
+const { applyPreset, clampPresetTroops } = require("../../plugins/attack/presets")
 const eventsDifficulties = require("../../items/eventAutoScalingDifficulties.json")
 const err = require("../../err.json")
 const pluginOptions = Object.assign(structuredClone(
@@ -255,12 +276,175 @@ events.on("eventStart", async eventInfo => {
 
                 // --- PRESET LOGIC ---
                 if (pluginOptions.useGamePreset) {
-                    const presetResult = applyPreset(attackInfo, Number(pluginOptions.presetID), maxWaves);
+                    // Hybrid mode: preset wave 0 + chest tools waves 1+ (when chests enabled)
+                    const useHybridMode = !pluginOptions.noChests && maxWaves > 1;
+                    const presetWaves = useHybridMode ? 1 : maxWaves;
+                    const presetResult = applyPreset(attackInfo, Number(pluginOptions.presetID), presetWaves);
                     if (!presetResult.success) {
                         console.warn(`[${name}] Preset Error: ${presetResult.error}`);
                         throw "PRESET_ERROR: " + presetResult.error;
                     }
-                    console.log(`[${name}] Game Preset Applied (ID: ${pluginOptions.presetID}, Waves: ${maxWaves})`);
+                    console.log(`[${name}] Game Preset Applied (ID: ${pluginOptions.presetID}, Preset Waves: ${presetWaves}/${maxWaves}${useHybridMode ? ' [Hybrid: chest waves 1+]' : ''})`);
+
+                    // Clamp preset troops to current commander's max capacity
+                    const commanderStatsPreset = getCommanderStats(commander);
+                    const presetMaxFront = Math.floor(getAmountSoldiersFront(level) + (commanderStatsPreset.relicAttackUnitAmountFront ?? 0) / 100);
+                    const presetMaxFlank = Math.floor(getAmountSoldiersFlank(level) + (commanderStatsPreset.relicAttackUnitAmountFlank ?? 0) / 100);
+                    if (clampPresetTroops(attackInfo, presetMaxFront, presetMaxFlank)) {
+                        console.warn(`[${name}] Preset asker sayilari mevcut komutanin kapasitesine gore sinirlandirildi (Front: ${presetMaxFront}, Flank: ${presetMaxFlank})`);
+                    }
+
+                    // Hybrid mode: fill remaining waves with chest tools + soldiers
+                    if (useHybridMode) {
+                        const attackerMeleeTroops = []
+                        const attackerRangeTroops = []
+                        const attackerSamuraiTools = []
+                        const attackerWallSamuraiTools = []
+                        const attackerGateSamuraiTools = []
+                        const attackerShieldSamuraiTools = []
+                        const attackerWallTools = []
+                        const attackerShieldTools = []
+
+                        for (let i = 0; i < sourceCastle.unitInventory.length; i++) {
+                            const unit = sourceCastle.unitInventory[i]
+                            const unitInfo = units.find(obj => unit.unitID == obj.wodID)
+                            if (unitInfo == undefined) continue
+                            if (unitInfo.wodID == 277) continue
+
+                            if (unitInfo.samuraiTokenBooster != undefined) {
+                                if (unitInfo.gateBonus)
+                                    attackerGateSamuraiTools.push([unitInfo, unit.ammount])
+                                else if (unitInfo.wallBonus)
+                                    attackerWallSamuraiTools.push([unitInfo, unit.ammount])
+                                else if (unitInfo.defRangeBonus)
+                                    attackerShieldSamuraiTools.push([unitInfo, unit.ammount])
+                                else
+                                    attackerSamuraiTools.push([unitInfo, unit.ammount])
+                            }
+                            else if (
+                                unitInfo.toolCategory &&
+                                unitInfo.usageEventID == undefined &&
+                                unitInfo.allowedToAttack == undefined &&
+                                unitInfo.typ == 'Attack' &&
+                                unitInfo.amountPerWave == undefined
+                            ) {
+                                if (unitInfo.wallBonus)
+                                    attackerWallTools.push([unitInfo, unit.ammount])
+                                else if (unitInfo.defRangeBonus)
+                                    attackerShieldTools.push([unitInfo, unit.ammount])
+                            }
+                            else if (unitInfo.fightType == 0) {
+                                if (unitInfo.role == "melee")
+                                    attackerMeleeTroops.push([unitInfo, unit.ammount])
+                                else if (unitInfo.role == "ranged")
+                                    attackerRangeTroops.push([unitInfo, unit.ammount])
+                            }
+                        }
+
+                        attackerSamuraiTools.sort((a, b) =>
+                            Number(b[0].samuraiTokenBooster) - Number(a[0].samuraiTokenBooster))
+                        attackerGateSamuraiTools.sort((a, b) =>
+                            Number(b[0].samuraiTokenBooster) - Number(a[0].samuraiTokenBooster))
+                        attackerWallSamuraiTools.sort((a, b) =>
+                            Number(b[0].samuraiTokenBooster) - Number(a[0].samuraiTokenBooster))
+                        attackerShieldSamuraiTools.sort((a, b) =>
+                            Number(b[0].samuraiTokenBooster) - Number(a[0].samuraiTokenBooster))
+
+                        if (pluginOptions.lowValueChests) {
+                            attackerSamuraiTools.reverse()
+                            attackerGateSamuraiTools.reverse()
+                            attackerWallSamuraiTools.reverse()
+                            attackerShieldSamuraiTools.reverse()
+                        }
+
+                        attackerWallTools.sort((a, b) =>
+                            Number(a[0].wallBonus) - Number(b[0].wallBonus))
+                        attackerShieldTools.sort((a, b) =>
+                            Number(a[0].defRangeBonus) - Number(b[0].defRangeBonus))
+
+                        attackerWallSamuraiTools.push(...attackerWallTools)
+                        attackerShieldSamuraiTools.push(...attackerShieldTools)
+
+                        // Sort soldiers: weakest first for chest waves
+                        attackerMeleeTroops.sort((a, b) => Number(a[0].meleeAttack) - Number(b[0].meleeAttack))
+                        attackerRangeTroops.sort((a, b) => Number(a[0].rangeAttack) - Number(b[0].rangeAttack))
+
+                        const setupWave = (wallLevelRequirement, row) =>
+                            wallLevelRequirement.every(e => e <= level ? row.push([-1, 0]) : false)
+
+                        // Fill waves 1+ with chest tools + soldiers
+                        for (let wIdx = 1; wIdx < maxWaves; wIdx++) {
+                            const wave = attackInfo.A[wIdx];
+                            if (!wave) continue;
+
+                            // Recreate slots (cleared by applyPreset)
+                            setupWave([0, 37], wave.L.T)
+                            setupWave([0, 13], wave.L.U)
+                            setupWave([0, 11, 37], wave.M.T)
+                            setupWave([0, 0, 13, 13, 26, 26], wave.M.U)
+                            setupWave([0, 37], wave.R.T)
+                            setupWave([0, 13], wave.R.U)
+
+                            const maxToolsFlank = getTotalAmountToolsFlank(level, 0)
+                            const maxToolsFront = getTotalAmountToolsFront(level)
+                            const maxTroopFront = presetMaxFront
+                            const maxTroopFlank = presetMaxFlank
+
+                            const selectTool = i => {
+                                let tools = attackerSamuraiTools
+                                if (tools.length == 0) {
+                                    if (i == 0) {
+                                        tools = attackerWallSamuraiTools
+                                        if (tools.length == 0) tools = attackerShieldSamuraiTools
+                                    }
+                                    else if (i == 1) {
+                                        tools = attackerShieldSamuraiTools
+                                        if (tools.length == 0) tools = attackerWallSamuraiTools
+                                    }
+                                    if (i == 2) {
+                                        tools = attackerGateSamuraiTools
+                                        if (tools.length == 0) tools = attackerWallSamuraiTools
+                                        if (tools.length == 0) tools = attackerShieldSamuraiTools
+                                    }
+                                }
+                                return tools
+                            }
+
+                            let maxTools = maxToolsFlank
+                            wave.L.T.forEach((unitSlot, i) =>
+                                maxTools -= assignUnit(unitSlot, selectTool(0), maxTools))
+                            maxTools = maxToolsFlank
+                            wave.R.T.forEach((unitSlot, i) =>
+                                maxTools -= assignUnit(unitSlot, selectTool(1), maxTools))
+                            maxTools = maxToolsFront
+                            wave.M.T.forEach((unitSlot, i) =>
+                                maxTools -= assignUnit(unitSlot, selectTool(2), maxTools))
+
+                            let maxTroops = maxTroopFlank
+                            wave.L.U.forEach((unitSlot, i) =>
+                                maxTroops -= assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
+                                    attackerRangeTroops : attackerMeleeTroops, maxTroops))
+                            maxTroops = maxTroopFlank
+                            wave.R.U.forEach((unitSlot, i) =>
+                                maxTroops -= assignUnit(unitSlot, attackerMeleeTroops.length <= 0 ?
+                                    attackerRangeTroops : attackerMeleeTroops, maxTroops))
+                            maxTroops = maxTroopFront
+                            wave.M.U.forEach((unitSlot, i) =>
+                                maxTroops -= assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
+                                    attackerMeleeTroops : attackerRangeTroops, maxTroops))
+                        }
+
+                        // Courtyard reinforcement wave
+                        let maxTroops = getMaxUnitsInReinforcementWave(playerInfo.level, level)
+                        attackInfo.RW.forEach((unitSlot, i) => {
+                            let attacker = i & 1 ?
+                                (attackerMeleeTroops.length > 0 ? attackerMeleeTroops : attackerRangeTroops) :
+                                (attackerRangeTroops.length > 0 ? attackerRangeTroops : attackerMeleeTroops)
+                            maxTroops -= assignUnit(unitSlot, attacker, Math.floor(maxTroops / 2))
+                        })
+
+                        console.log(`[${name}] Hybrid: Dalga 1+ sandik aletleri ve askerlerle dolduruldu`);
+                    }
                 } else {
                     const attackerMeleeTroops = []
                     const attackerRangeTroops = []

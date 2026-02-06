@@ -11,14 +11,14 @@ const { Types, getResourceCastleList, ClientCommands, areaInfoLock, AreaType, sp
 const { waitToAttack, getAttackInfo, assignUnit, getAmountSoldiersFlank, getAmountSoldiersFront, getMaxUnitsInReinforcementWave, boxMullerRandom, sleep, incrementAttackCounter, hasReachedAttackLimit, getCurrentAttackCount } = require("./attack.js")
 const { movementEvents, waitForCommanderAvailable, freeCommander, useCommander } = require("../commander")
 const { sendXT, waitForResult, xtHandler, botConfig, playerInfo } = require("../../ggebot")
-const { applyPreset } = require("../../plugins/attack/presets")
+const { applyPreset, clampPresetTroops } = require("../../plugins/attack/presets")
 const getAreaCached = require('../../getmap.js')
 const err = require("../../err.json")
 
 const units = require("../../items/units.json")
 const pretty = require('pretty-time')
 
-const minTroopCount = 100
+const minTroopCount = 50
 
 const troopBlackList = [277]//, 34, 35]
 
@@ -90,6 +90,10 @@ async function barronHit(name, type, kid, options) {
     pluginOptions.useGamePreset ??= false;
     pluginOptions.presetID ??= 0;
     pluginOptions.maxWaves ??= 3; // Default index 3 (becomes 4 waves after +1)
+    pluginOptions.maxTroopsLeft ??= "0";
+    pluginOptions.maxTroopsMiddle ??= "0";
+    pluginOptions.maxTroopsRight ??= "0";
+    pluginOptions.maxTroopsCourtyard ??= "0";
 
     let towerTime = new WeakMap()
     let tooManyUnitsErrorCount = 0 // ATTACK_TOO_MANY_UNITS hata sayacı
@@ -247,6 +251,13 @@ async function barronHit(name, type, kid, options) {
                     }
                     console.log(`[${name}] Game Preset Applied: "${presetResult.presetName}" (Slot ${pluginOptions.presetID + 1}, Waves: ${maxWaves})`);
 
+                    // Clamp preset troops to current level's max capacity
+                    const presetMaxFlank = getAmountSoldiersFlank(level);
+                    const presetMaxFront = getAmountSoldiersFront(level);
+                    if (clampPresetTroops(attackInfo, presetMaxFront, presetMaxFlank)) {
+                        console.warn(`[${name}] Preset asker sayilari mevcut kapasiteye gore sinirlandirildi (Front: ${presetMaxFront}, Flank: ${presetMaxFlank})`);
+                    }
+
                     // Check if preset assigned any troops (it might only have tools)
                     let presetTroopCount = countTotalUnits(attackInfo);
 
@@ -343,46 +354,61 @@ async function barronHit(name, type, kid, options) {
                             }
                         }
 
-                        // Fill each wave independently (no global troop limit)
+                        // Kullanıcı limitleri
+                        const userLimitLeft = Number(pluginOptions.maxTroopsLeft) || 0;
+                        const userLimitMiddle = Number(pluginOptions.maxTroopsMiddle) || 0;
+                        const userLimitRight = Number(pluginOptions.maxTroopsRight) || 0;
+                        const userLimitCourtyard = Number(pluginOptions.maxTroopsCourtyard) || 0;
+
+                        // Fill each wave independently - SMART ALLOCATION
+                        // Küçük limitli kanatları önce doldur, böylece büyük limitli kanat kalan askerleri alır
                         attackInfo.A.forEach((wave, waveIndex) => {
                             if (waveIndex >= waveCount) return;
 
                             const maxTroopFlank = getAmountSoldiersFlank(level)
                             const maxTroopFront = getAmountSoldiersFront(level)
 
-                            if (doLeft) {
-                                let currentMax = maxTroopFlank;
-                                wave.L.U.forEach((unitSlot, i) => {
-                                    if (currentMax <= 0) return;
-                                    let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
-                                        attackerMeleeTroops : attackerRangeTroops, currentMax);
-                                    currentMax -= assigned;
-                                });
-                            }
+                            // Kanatları hazırla (aktif olanlar)
+                            const flanks = [];
 
-                            if (doRight) {
-                                let currentMax = maxTroopFlank;
-                                wave.R.U.forEach((unitSlot, i) => {
-                                    if (currentMax <= 0) return;
-                                    let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
-                                        attackerMeleeTroops : attackerRangeTroops, currentMax);
-                                    currentMax -= assigned;
-                                });
+                            if (doLeft) {
+                                const limit = userLimitLeft > 0 ? Math.min(maxTroopFlank, userLimitLeft) : maxTroopFlank;
+                                flanks.push({ side: 'L', slots: wave.L.U, limit: limit });
                             }
 
                             if (doMiddle) {
-                                let currentMax = maxTroopFront;
-                                wave.M.U.forEach((unitSlot, i) => {
+                                const limit = userLimitMiddle > 0 ? Math.min(maxTroopFront, userLimitMiddle) : maxTroopFront;
+                                flanks.push({ side: 'M', slots: wave.M.U, limit: limit });
+                            }
+
+                            if (doRight) {
+                                const limit = userLimitRight > 0 ? Math.min(maxTroopFlank, userLimitRight) : maxTroopFlank;
+                                flanks.push({ side: 'R', slots: wave.R.U, limit: limit });
+                            }
+
+                            // Küçük limitten büyüğe sırala (önce küçük limitli kanatlar doldurulur)
+                            flanks.sort((a, b) => a.limit - b.limit);
+
+                            // Sırayla doldur
+                            flanks.forEach(flank => {
+                                let currentMax = flank.limit;
+                                flank.slots.forEach((unitSlot, i) => {
                                     if (currentMax <= 0) return;
                                     let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
                                         attackerMeleeTroops : attackerRangeTroops, currentMax);
                                     currentMax -= assigned;
                                 });
-                            }
+                            });
+
+                            // Devre dışı kanatları temizle
+                            if (!doLeft) { wave.L.U = []; wave.L.T = []; }
+                            if (!doMiddle) { wave.M.U = []; wave.M.T = []; }
+                            if (!doRight) { wave.R.U = []; wave.R.T = []; }
                         })
 
                         if (doCourtyard) {
                             let maxTroops = getMaxUnitsInReinforcementWave(playerInfo.level, level);
+                            if (userLimitCourtyard > 0) maxTroops = Math.min(maxTroops, userLimitCourtyard);
                             attackInfo.RW.forEach((unitSlot, i) => {
                                 if (maxTroops <= 0) return;
                                 let attacker = i & 1 ?
@@ -393,6 +419,8 @@ async function barronHit(name, type, kid, options) {
                                     Math.floor(maxTroops / 2));
                                 maxTroops -= assigned;
                             });
+                        } else {
+                            attackInfo.RW = [];
                         }
                     }
                 } else {
@@ -435,46 +463,61 @@ async function barronHit(name, type, kid, options) {
                     const doMiddle = pluginOptions.attackMiddle !== false;
                     const doCourtyard = pluginOptions.attackCourtyard !== false;
 
+                    // Kullanıcı limitleri
+                    const userLimitLeft = Number(pluginOptions.maxTroopsLeft) || 0;
+                    const userLimitMiddle = Number(pluginOptions.maxTroopsMiddle) || 0;
+                    const userLimitRight = Number(pluginOptions.maxTroopsRight) || 0;
+                    const userLimitCourtyard = Number(pluginOptions.maxTroopsCourtyard) || 0;
+
+                    // Küçük limitli kanatları önce doldur
                     attackInfo.A.forEach((wave, waveIndex) => {
                         if (waveIndex >= waveCount) return;
 
                         const maxTroopFlank = getAmountSoldiersFlank(level)
                         const maxTroopFront = getAmountSoldiersFront(level)
 
-                        if (doLeft) {
-                            let currentMax = maxTroopFlank;
-                            wave.L.U.forEach((unitSlot, i) => {
-                                if (currentMax <= 0) return;
-                                let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
-                                    attackerMeleeTroops : attackerRangeTroops, currentMax);
-                                currentMax -= assigned;
-                            });
-                        }
+                        // Kanatları hazırla (aktif olanlar)
+                        const flanks = [];
 
-                        if (doRight) {
-                            let currentMax = maxTroopFlank;
-                            wave.R.U.forEach((unitSlot, i) => {
-                                if (currentMax <= 0) return;
-                                let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
-                                    attackerMeleeTroops : attackerRangeTroops, currentMax);
-                                currentMax -= assigned;
-                            });
+                        if (doLeft) {
+                            const limit = userLimitLeft > 0 ? Math.min(maxTroopFlank, userLimitLeft) : maxTroopFlank;
+                            flanks.push({ side: 'L', slots: wave.L.U, limit: limit });
                         }
 
                         if (doMiddle) {
-                            let currentMax = maxTroopFront;
-                            wave.M.U.forEach((unitSlot, i) => {
+                            const limit = userLimitMiddle > 0 ? Math.min(maxTroopFront, userLimitMiddle) : maxTroopFront;
+                            flanks.push({ side: 'M', slots: wave.M.U, limit: limit });
+                        }
+
+                        if (doRight) {
+                            const limit = userLimitRight > 0 ? Math.min(maxTroopFlank, userLimitRight) : maxTroopFlank;
+                            flanks.push({ side: 'R', slots: wave.R.U, limit: limit });
+                        }
+
+                        // Küçük limitten büyüğe sırala (önce küçük limitli kanatlar doldurulur)
+                        flanks.sort((a, b) => a.limit - b.limit);
+
+                        // Sırayla doldur
+                        flanks.forEach(flank => {
+                            let currentMax = flank.limit;
+                            flank.slots.forEach((unitSlot, i) => {
                                 if (currentMax <= 0) return;
                                 let assigned = assignUnit(unitSlot, attackerRangeTroops.length <= 0 ?
                                     attackerMeleeTroops : attackerRangeTroops, currentMax);
                                 currentMax -= assigned;
                             });
-                        }
+                        });
+
+                        // Devre dışı kanatları temizle
+                        if (!doLeft) { wave.L.U = []; wave.L.T = []; }
+                        if (!doMiddle) { wave.M.U = []; wave.M.T = []; }
+                        if (!doRight) { wave.R.U = []; wave.R.T = []; }
                     })
 
 
                     if (doCourtyard) {
                         let maxTroops = getMaxUnitsInReinforcementWave(playerInfo.level, level);
+                        if (userLimitCourtyard > 0) maxTroops = Math.min(maxTroops, userLimitCourtyard);
                         attackInfo.RW.forEach((unitSlot, i) => {
                             if (maxTroops <= 0) return;
                             let attacker = i & 1 ?
@@ -485,6 +528,8 @@ async function barronHit(name, type, kid, options) {
                                 Math.floor(maxTroops / 2));
                             maxTroops -= assigned;
                         })
+                    } else {
+                        attackInfo.RW = [];
                     }
                 }
 

@@ -7,64 +7,113 @@ if (isMainThread) {
         name: name,
         description: "Hits Barrons",
         pluginOptions: [
+            // ═══════════════════════════════════════
+            // KOMUTAN AYARLARI
+            // ═══════════════════════════════════════
+            { type: "Label", label: "⚔️ Komutan Ayarları" },
             {
                 type: "Text",
-                label: "Com White List",
-                description: "Commander range (e.g., 1-3 for commanders 1,2,3)",
+                label: "Komutan Listesi",
+                description: "Kullanılacak komutan aralığı (örn: 1-3)",
                 key: "commanderWhiteList"
             },
-            { type: "Label", label: "Horse Settings" },
+
+            // ═══════════════════════════════════════
+            // SALDIRI POZİSYONLARI
+            // ═══════════════════════════════════════
+            { type: "Label", label: "🎯 Saldırı Pozisyonları" },
             {
                 type: "Checkbox",
-                label: "Use Feather",
-                description: "Use travel speed boosts",
+                label: "Sol Kanat",
+                description: "Sol kanattan saldırı yap",
+                key: "attackLeft",
+                default: true
+            },
+            {
+                type: "Text",
+                label: "Sol Max Asker",
+                description: "Sol kanat maksimum asker (0 = limitsiz)",
+                key: "maxTroopsLeft",
+                default: "0"
+            },
+            {
+                type: "Checkbox",
+                label: "Orta Cephe",
+                description: "Ortadan saldırı yap",
+                key: "attackMiddle",
+                default: true
+            },
+            {
+                type: "Text",
+                label: "Orta Max Asker",
+                description: "Orta cephe maksimum asker (0 = limitsiz)",
+                key: "maxTroopsMiddle",
+                default: "0"
+            },
+            {
+                type: "Checkbox",
+                label: "Sağ Kanat",
+                description: "Sağ kanattan saldırı yap",
+                key: "attackRight",
+                default: true
+            },
+            {
+                type: "Text",
+                label: "Sağ Max Asker",
+                description: "Sağ kanat maksimum asker (0 = limitsiz)",
+                key: "maxTroopsRight",
+                default: "0"
+            },
+            {
+                type: "Checkbox",
+                label: "Avlu Takviyesi",
+                description: "Avluya takviye askeri gönder",
+                key: "attackCourtyard",
+                default: true
+            },
+            {
+                type: "Text",
+                label: "Avlu Max Asker",
+                description: "Avlu maksimum asker (0 = limitsiz)",
+                key: "maxTroopsCourtyard",
+                default: "0"
+            },
+
+            // ═══════════════════════════════════════
+            // ÖN AYAR (PRESET)
+            // ═══════════════════════════════════════
+            ...getPresetOptions(),
+
+            // ═══════════════════════════════════════
+            // SÜREGEÇ AYARLARI
+            // ═══════════════════════════════════════
+            { type: "Label", label: "⏱️ Süregeç Ayarları" },
+            {
+                type: "Checkbox",
+                label: "Süregeç Kullan",
+                description: "Seyahat bekleme süresini atla",
+                key: "useTimeSkips",
+                default: false
+            },
+
+            // ═══════════════════════════════════════
+            // AT AYARLARI
+            // ═══════════════════════════════════════
+            { type: "Label", label: "🐴 At Ayarları" },
+            {
+                type: "Checkbox",
+                label: "Tüy Kullan",
+                description: "Seyahat hızı artırıcısı kullan",
                 key: "useFeather",
                 default: false
             },
             {
                 type: "Checkbox",
-                label: "Use Coin",
-                description: "Use fast recruitment",
+                label: "Altın Kullan",
+                description: "Hızlı asker toplanması için altın at kullan",
                 key: "useCoin",
                 default: false
-            },
-            {
-                type: "Checkbox",
-                label: "Use Time Skips",
-                description: "Skip travel time",
-                key: "useTimeSkips",
-                default: false
-            },
-            { type: "Label", label: "Attack Settings" },
-            {
-                type: "Checkbox",
-                label: "Attack Left Flank",
-                description: "Enable attacks on left side",
-                key: "attackLeft",
-                default: true
-            },
-            {
-                type: "Checkbox",
-                label: "Attack Middle",
-                description: "Enable attacks on center",
-                key: "attackMiddle",
-                default: true
-            },
-            {
-                type: "Checkbox",
-                label: "Attack Right Flank",
-                description: "Enable attacks on right side",
-                key: "attackRight",
-                default: true
-            },
-            {
-                type: "Checkbox",
-                label: "Attack Courtyard",
-                description: "Enable courtyard attacks",
-                key: "attackCourtyard",
-                default: true
-            },
-            ...getPresetOptions()
+            }
         ]
     }
 }

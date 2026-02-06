@@ -106,6 +106,7 @@ class User {
       });
     }
     this.externalEvent = !!(obj.externalEvent)
+    this.locked = !!(obj.locked || obj.is_locked)
   }
 }
 
@@ -141,15 +142,23 @@ const changeUser = async (userId, user) => {
   });
   if (!gameAcc) return null;
 
-  // Kilitli kale için sadece şifre ve is_active değiştirilebilir
   const updateData = {
     is_active: user.state == 1
   };
 
-  // Kilitli değilse username ve server değiştirilebilir
-  if (!gameAcc.is_locked) {
+  // Sunucu sadece değiştiyse güncelle
+  if (user.server && String(user.server) !== String(gameAcc.game_server)) {
+    updateData.game_server = String(user.server);
+  }
+
+  // Username sadece değiştiyse ve kilitli değilse güncelle
+  if (!gameAcc.is_locked && user.name && user.name !== gameAcc.game_username) {
     updateData.game_username = user.name;
-    updateData.game_server = user.server || '10';
+  }
+
+  // Kilit durumu güncellenebilir
+  if (user.locked !== undefined) {
+    updateData.is_locked = !!user.locked;
   }
 
   // Şifre her zaman güncellenebilir (oyun şifresi değiştiğinde)
@@ -703,7 +712,38 @@ async function start() {
           console.debug(`[${obj.name}] Received SetUser. Plugin Count: ${activePluginCount}, State: ${obj.state}`);
 
           let oldU = await getSpecificUser(userId, new User(obj))
-          let newU = await changeUser(userId, new User(obj))
+          if (!oldU) {
+            console.error(`[${obj.name}] User not found.`);
+            ws.send(JSON.stringify([ErrorType.Generic, ActionType.SetUser, { error: 'Kullanıcı bulunamadı.' }]));
+            break;
+          }
+
+          // Şifre veya sunucu değişikliği algıla
+          const newUserObj = new User(obj);
+          const passChanged = newUserObj.pass && newUserObj.pass !== '' && newUserObj.pass !== oldU.pass;
+          const serverChanged = String(newUserObj.server) !== String(oldU.server);
+
+          // Doğrulama gerekiyorsa oyun sunucusuna bağlan
+          if (passChanged || serverChanged) {
+            const effectiveServer = serverChanged ? String(newUserObj.server) : String(oldU.server);
+            const effectivePass = passChanged ? newUserObj.pass : oldU.pass;
+
+            console.log(`[${oldU.name}] Kimlik değişikliği algılandı. Oyun sunucusunda doğrulanıyor...`);
+            ws.send(JSON.stringify([ErrorType.Success, ActionType.SetUser, { verifying: true }]));
+
+            const verifyResult = await verifyGGECredentials(effectiveServer, oldU.name, effectivePass);
+
+            if (!verifyResult.success) {
+              console.warn(`[${oldU.name}] Doğrulama başarısız: ${verifyResult.error}`);
+              ws.send(JSON.stringify([ErrorType.Authentication, ActionType.SetUser, {
+                error: verifyResult.error || 'Giriş bilgileri doğrulanamadı.'
+              }]));
+              break;
+            }
+            console.log(`[${oldU.name}] Doğrulama başarılı.`);
+          }
+
+          let newU = await changeUser(userId, newUserObj)
 
           if (!newU) {
             console.error(`[${obj.name}] User update failed.`);
