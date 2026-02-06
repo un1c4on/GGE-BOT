@@ -3,16 +3,17 @@ version: '3.8'
 services:
   postgres-db:
     image: postgres:15-alpine
-    container_name: gge-bot-postgres
+    container_name: ggebot_postgres
     restart: always
     environment:
-      POSTGRES_USER: postgres
+      POSTGRES_USER: un1c4on
       POSTGRES_PASSWORD: un1c4on
       POSTGRES_DB: ggebot_db
     ports:
-      - "5433:5432" # Dışarıdan (ve botun çalıştığı sunucudan) erişim için 5433 portu
+      - "5433:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ggebot_pgdata:/var/lib/postgresql/data
 
 volumes:
-  pgdata:
+  ggebot_pgdata:
+    name: ggebot_pgdata  # Named volume - veri kaybını önler

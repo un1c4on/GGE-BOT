@@ -20,7 +20,8 @@ const GameAccount = sequelize.define('GameAccount', {
   game_username: { type: DataTypes.STRING, allowNull: false },
   game_password_encrypted: { type: DataTypes.TEXT, allowNull: false },
   is_active: { type: DataTypes.BOOLEAN, defaultValue: false },
-  is_running: { type: DataTypes.BOOLEAN, defaultValue: false }
+  is_running: { type: DataTypes.BOOLEAN, defaultValue: false },
+  is_locked: { type: DataTypes.BOOLEAN, defaultValue: false } // Kale kilitli mi (değiştirilemez)
 }, {
   timestamps: true,
   indexes: [{ unique: true, fields: ['game_server', 'game_username'] }]

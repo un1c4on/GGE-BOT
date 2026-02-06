@@ -1,12 +1,8 @@
 import * as React from 'react'
 import {
     Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-    Paper, Button, Backdrop, Checkbox, Box, Typography, Chip,
-    Dialog, DialogTitle, DialogContent, DialogActions, TextField,
-    Select, MenuItem, FormControl, InputLabel, Alert
+    Paper, Button, Backdrop, Box, Typography, Chip
 } from '@mui/material'
-import AddIcon from '@mui/icons-material/Add';
-import DeleteIcon from '@mui/icons-material/Delete';
 
 import { ErrorType, ActionType, LogLevel } from "../types.js"
 import { getTranslation } from '../translations.js'
@@ -62,56 +58,11 @@ export default function GGEUserTable(props) {
     const { language } = props;
     const t = (key) => getTranslation(language, key);
 
-    const [selected, setSelected] = React.useState([])
     const [openLogs, setOpenLogs] = React.useState(false)
     const [logUser, setLogUser] = React.useState(null)
 
-    // Dialog States
-    const [openAddDialog, setOpenAddDialog] = React.useState(false);
-    const [addError, setAddError] = React.useState(null);
-    const [newCastle, setNewCastle] = React.useState({
-        server: '10', // Default TR1
-        game_username: '',
-        game_password: ''
-    });
-
     const handleLogClose = () => { setOpenLogs(false); setLogUser(null); }
     const handleLogOpen = () => setOpenLogs(true)
-
-    const handleAddCastle = async () => {
-        setAddError(null);
-        if (!newCastle.game_username || !newCastle.game_password) {
-            setAddError(t("Please fill all fields"));
-            return;
-        }
-
-        try {
-            const response = await fetch('/api/add-castle', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(newCastle)
-            });
-
-            const data = await response.json();
-
-            if (response.ok) {
-                setOpenAddDialog(false);
-                setNewCastle({ server: '10', game_username: '', game_password: '' });
-                // WebSocket will update the list automatically via backend logic
-            } else {
-                setAddError(data.error || t("Failed to add castle"));
-            }
-        } catch (err) {
-            setAddError(t("Network error"));
-        }
-    };
-
-    const handleRemoveSelected = () => {
-        if (selected.length === 0) return;
-        const usersToRemove = props.rows.filter(r => selected.includes(r.id));
-        props.ws.send(JSON.stringify([ErrorType.Success, ActionType.RemoveUser, usersToRemove]));
-        setSelected([]);
-    };
 
     const PlayerTable = () => {
         return (
@@ -119,11 +70,10 @@ export default function GGEUserTable(props) {
                 <Table size="small">
                     <TableHead>
                         <TableRow>
-                            <TableCell padding="checkbox"></TableCell>
                             <TableCell sx={{ fontWeight: 'bold' }}>{t("Name")}</TableCell>
                             <TableCell sx={{ fontWeight: 'bold' }}>{t("Plugins")}</TableCell>
                             <TableCell sx={{ fontWeight: 'bold' }}>{t("Status")}</TableCell>
-                            <TableCell align="right" sx={{ fontWeight: 'bold' }}>{t("Settings")}</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 'bold' }}>{t("Actions")}</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
@@ -141,19 +91,12 @@ export default function GGEUserTable(props) {
                                     })
                                     return enabledPlugins
                                 }
-                                const isItemSelected = selected.includes(row.id)
                                 const [state, setState] = React.useState(row.state)
                                 row.state = state
                                 let status = props.usersStatus[row.id] ?? {}
 
                                 return (
                                     <TableRow sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
-                                        <TableCell padding="checkbox">
-                                            <Checkbox color="primary" checked={isItemSelected} onClick={() => {
-                                                let idx = selected.indexOf(row.id)
-                                                idx < 0 ? setSelected([...selected, row.id]) : setSelected(selected.filter(i => i !== row.id))
-                                            }} />
-                                        </TableCell>
                                         <TableCell component="th" scope="row">{row.name} <Typography variant="caption" color="gray">({row.server})</Typography></TableCell>
                                         <TableCell align="left">{getEnabledPlugins().join(", ")}</TableCell>
                                         <TableCell>
@@ -188,66 +131,10 @@ export default function GGEUserTable(props) {
             </Backdrop>
 
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                <Typography variant="h5" fontWeight="bold" color="primary">{t("Game Castles")}</Typography>
-                <Box>
-                    {selected.length > 0 && (
-                        <Button
-                            variant="outlined" color="error" startIcon={<DeleteIcon />}
-                            onClick={handleRemoveSelected} sx={{ mr: 2 }}
-                        >
-                            {t("Remove Selected")}
-                        </Button>
-                    )}
-                    <Button
-                        variant="contained" color="secondary" startIcon={<AddIcon />}
-                        onClick={() => setOpenAddDialog(true)}
-                    >
-                        {t("Add Castle")}
-                    </Button>
-                </Box>
+                <Typography variant="h5" fontWeight="bold" color="primary">{t("Bot Durumu")}</Typography>
             </Box>
 
             <PlayerTable />
-
-            {/* ADD CASTLE DIALOG */}
-            <Dialog open={openAddDialog} onClose={() => setOpenAddDialog(false)}>
-                <DialogTitle>{t("Link New Game Account")}</DialogTitle>
-                <DialogContent>
-                    {addError && <Alert severity="error" sx={{ mb: 2 }}>{addError}</Alert>}
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 350, pt: 1 }}>
-                        <FormControl fullWidth size="small">
-                            <InputLabel id="server-select-label">{t("Server")}</InputLabel>
-                            <Select
-                                labelId="server-select-label"
-                                value={newCastle.server}
-                                label={t("Server")}
-                                onChange={(e) => setNewCastle({ ...newCastle, server: e.target.value })}
-                            >
-                                <MenuItem value="10">TR1 (Türkiye)</MenuItem>
-                                <MenuItem value="387">INT1 (International 1)</MenuItem>
-                                <MenuItem value="388">INT2 (International 2)</MenuItem>
-                                <MenuItem value="175">DE1 (Germany)</MenuItem>
-                                <MenuItem value="357">US1 (USA)</MenuItem>
-                                <MenuItem value="385">PL1 (Poland)</MenuItem>
-                            </Select>
-                        </FormControl>
-                        <TextField
-                            label={t("Game Username")} fullWidth size="small"
-                            value={newCastle.game_username}
-                            onChange={(e) => setNewCastle({ ...newCastle, game_username: e.target.value })}
-                        />
-                        <TextField
-                            label={t("Game Password")} fullWidth size="small" type="password"
-                            value={newCastle.game_password}
-                            onChange={(e) => setNewCastle({ ...newCastle, game_password: e.target.value })}
-                        />
-                    </Box>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setOpenAddDialog(false)}>{t("Cancel")}</Button>
-                    <Button variant="contained" onClick={handleAddCastle}>{t("Add")}</Button>
-                </DialogActions>
-            </Dialog>
         </>
     )
 }

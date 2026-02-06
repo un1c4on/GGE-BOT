@@ -184,6 +184,7 @@ if (pluginOptions.useGamePreset && pluginOptions.maxWaves > 2) {
 const kid = KingdomID.berimond
 const eventID = 3
 const minTroopCount = 30
+let tooManyUnitsErrorCount = 0 // ATTACK_TOO_MANY_UNITS hata sayacı
 
 let targetCache = null
 let isTransferring = false  // Flag to prevent race condition
@@ -694,12 +695,8 @@ const startLogic = async () => {
                         attackInfo.A.forEach((wave, waveIndex) => {
                             if (waveIndex >= waveCount) return;
 
-                            const commanderStats = getCommanderStats(commander)
-                            let rawFlank = Math.floor(getAmountSoldiersFlank(70) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100)
-                            let rawFront = Math.floor(getAmountSoldiersFront(70) * 1 + (commanderStats.relicAttackUnitAmountFront ?? 0) / 100)
-
-                            const maxTroopFlank = Math.max(0, rawFlank - (rawFlank > 15 ? 10 : 1))
-                            const maxTroopFront = Math.max(0, rawFront - (rawFront > 15 ? 10 : 1))
+                            const maxTroopFlank = getAmountSoldiersFlank(70)
+                            const maxTroopFront = getAmountSoldiersFront(70)
 
                             // Kullanıcı limitleri
                             const userLimitLeft = Number(pluginOptions.maxTroopsLeft) || 0;
@@ -818,11 +815,8 @@ const startLogic = async () => {
                     attackInfo.A.forEach((wave, waveIndex) => {
                         if (waveIndex >= waveCount) return;
 
-                        let rawFlank = Math.floor(getAmountSoldiersFlank(70) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100)
-                        let rawFront = Math.floor(getAmountSoldiersFront(70) * 1 + (commanderStats.relicAttackUnitAmountFront ?? 0) / 100)
-
-                        const maxTroopFlank = Math.max(0, rawFlank - (rawFlank > 15 ? 10 : 1))
-                        const maxTroopFront = Math.max(0, rawFront - (rawFront > 15 ? 10 : 1))
+                        const maxTroopFlank = getAmountSoldiersFlank(70)
+                        const maxTroopFront = getAmountSoldiersFront(70)
 
                         const maxToolsFlank = getTotalAmountToolsFlank(70, 0)
                         const maxToolsFront = getTotalAmountToolsFront(70)
@@ -970,9 +964,13 @@ const startLogic = async () => {
                     sendXT("dcl", JSON.stringify({ CD: 1 }));
                     await sleep(3 * 60 * 1000);  // 3 dakika bekle
                 } else if (attackInfoResult.result == 313) {
-                    console.error(`[${name}] Çok fazla asker hatası, saldırı durduruluyor 3 dakika`);
+                    tooManyUnitsErrorCount++
+                    console.warn(`[${name}] Çok fazla asker hatası (${tooManyUnitsErrorCount}/2), hedef atlanıyor`)
                     freeCommander(commander.lordID);
-                    await sleep(3 * 60 * 1000); // 3 dakika bekle
+                    if (tooManyUnitsErrorCount >= 2) {
+                        console.error(`[${name}] 2 kez ATTACK_TOO_MANY_UNITS hatası alındı, bot kapatılıyor...`)
+                        process.exit(1)
+                    }
                 } else if (attackInfoResult.result == "NO_TARGET") {
                     freeCommander(commander.lordID);
                     await sleep(5000);

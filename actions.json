@@ -19,5 +19,7 @@
     "SetPluginOptions" : 17,
     "GetChannels" : 18,
     "KillBot" : 19,
-    "AttackStats" : 20
+    "AttackStats" : 20,
+    "VerifyCastle" : 21,
+    "GetCastleStatus" : 22
 }

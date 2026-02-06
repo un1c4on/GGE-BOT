@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - GGE-BOT</title>
+    <title>Giriş - GGE-BOT</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         body {
@@ -112,25 +112,25 @@
 <div class="login-card">
     <div class="logo-container">
         <h1>GGE-BOT</h1>
-        <p style="color: #666; margin-top: 0.5rem;">Control Panel Access</p>
+        <p style="color: #666; margin-top: 0.5rem;">Kontrol Paneli Girişi</p>
     </div>
 
     <div id="errorBox" class="error-msg"></div>
 
     <form id="loginForm">
         <div class="form-group">
-            <label for="email">Username or Email</label>
-            <input type="text" id="email" name="email" required placeholder="Enter your username">
+            <label for="email">Kullanıcı Adı veya E-posta</label>
+            <input type="text" id="email" name="email" required placeholder="Kullanıcı adınızı girin">
         </div>
         <div class="form-group">
-            <label for="password">Password</label>
+            <label for="password">Şifre</label>
             <input type="password" id="password" name="password" required placeholder="••••••••">
         </div>
-        <button type="submit" class="btn" id="loginBtn">Sign In</button>
+        <button type="submit" class="btn" id="loginBtn">Giriş Yap</button>
     </form>
 
     <div class="footer">
-        Don't have an account? <a href="signup.html">Sign Up</a>
+        Hesabınız yok mu? <a href="signup.html">Kayıt Ol</a>
     </div>
 </div>
 
@@ -141,7 +141,7 @@
         const errorBox = document.getElementById('errorBox');
         
         btn.disabled = true;
-        btn.innerText = "Signing in...";
+        btn.innerText = "Giriş yapılıyor...";
         errorBox.style.display = 'none';
 
         const email = document.getElementById('email').value;
@@ -159,15 +159,15 @@
             if (res.ok) {
                 window.location.href = '/';
             } else {
-                errorBox.innerText = data.error || "Login failed.";
+                errorBox.innerText = data.error || "Giriş başarısız.";
                 errorBox.style.display = 'block';
             }
         } catch (err) {
-            errorBox.innerText = "Connection error. Please try again.";
+            errorBox.innerText = "Bağlantı hatası. Lütfen tekrar deneyin.";
             errorBox.style.display = 'block';
         } finally {
             btn.disabled = false;
-            btn.innerText = "Sign In";
+            btn.innerText = "Giriş Yap";
         }
     });
 </script>

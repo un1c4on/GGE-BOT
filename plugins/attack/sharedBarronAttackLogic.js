@@ -7,7 +7,6 @@ if (isMainThread)
         hidden: true
     }
 
-const { getCommanderStats } = require("../../getEquipment")
 const { Types, getResourceCastleList, ClientCommands, areaInfoLock, AreaType, spendSkip } = require('../../protocols')
 const { waitToAttack, getAttackInfo, assignUnit, getAmountSoldiersFlank, getAmountSoldiersFront, getMaxUnitsInReinforcementWave, boxMullerRandom, sleep, incrementAttackCounter, hasReachedAttackLimit, getCurrentAttackCount } = require("./attack.js")
 const { movementEvents, waitForCommanderAvailable, freeCommander, useCommander } = require("../commander")
@@ -93,6 +92,7 @@ async function barronHit(name, type, kid, options) {
     pluginOptions.maxWaves ??= 3; // Default index 3 (becomes 4 waves after +1)
 
     let towerTime = new WeakMap()
+    let tooManyUnitsErrorCount = 0 // ATTACK_TOO_MANY_UNITS hata sayacı
     let sortedAreaInfo = []
     const movements = []
 
@@ -347,12 +347,8 @@ async function barronHit(name, type, kid, options) {
                         attackInfo.A.forEach((wave, waveIndex) => {
                             if (waveIndex >= waveCount) return;
 
-                            const commanderStats = getCommanderStats(commander)
-                            let rawFlank = Math.floor(getAmountSoldiersFlank(level) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100)
-                            let rawFront = Math.floor(getAmountSoldiersFront(level) * 1 + (commanderStats.relicAttackUnitAmountFront ?? 0) / 100)
-
-                            const maxTroopFlank = Math.max(0, rawFlank - (rawFlank > 15 ? 5 : 1))
-                            const maxTroopFront = Math.max(0, rawFront - (rawFront > 15 ? 5 : 1))
+                            const maxTroopFlank = getAmountSoldiersFlank(level)
+                            const maxTroopFront = getAmountSoldiersFront(level)
 
                             if (doLeft) {
                                 let currentMax = maxTroopFlank;
@@ -442,14 +438,8 @@ async function barronHit(name, type, kid, options) {
                     attackInfo.A.forEach((wave, waveIndex) => {
                         if (waveIndex >= waveCount) return;
 
-                        const commanderStats = getCommanderStats(commander)
-                        // Subtract safety buffer to prevent ATTACK_TOO_MANY_UNITS
-                        // Use smaller buffer for low levels
-                        let rawFlank = Math.floor(getAmountSoldiersFlank(level) * 1 + (commanderStats.relicAttackUnitAmountFlank ?? 0) / 100)
-                        let rawFront = Math.floor(getAmountSoldiersFront(level) * 1 + (commanderStats.relicAttackUnitAmountFront ?? 0) / 100)
-
-                        const maxTroopFlank = Math.max(0, rawFlank - (rawFlank > 15 ? 5 : 1))
-                        const maxTroopFront = Math.max(0, rawFront - (rawFront > 15 ? 5 : 1))
+                        const maxTroopFlank = getAmountSoldiersFlank(level)
+                        const maxTroopFront = getAmountSoldiersFront(level)
 
                         if (doLeft) {
                             let currentMax = maxTroopFlank;
@@ -592,7 +582,12 @@ async function barronHit(name, type, kid, options) {
                     await sleep(3 * 60 * 1000) // 3 dakika bekle
                     return true // Retry
                 case "ATTACK_TOO_MANY_UNITS":
-                    console.warn(`[${name}] Çok fazla asker hatası, hedef atlanıyor`)
+                    tooManyUnitsErrorCount++
+                    console.warn(`[${name}] Çok fazla asker hatası (${tooManyUnitsErrorCount}/2), hedef atlanıyor`)
+                    if (tooManyUnitsErrorCount >= 2) {
+                        console.error(`[${name}] 2 kez ATTACK_TOO_MANY_UNITS hatası alındı, bot kapatılıyor...`)
+                        process.exit(1)
+                    }
                     return true
                 case "CANT_START_NEW_ARMIES":
                 default:

@@ -102,11 +102,26 @@ export default function UserSettings(props) {
                     <Typography variant="h4" sx={{ mb: 4, fontWeight: 'bold' }}>{t("Account Settings")}</Typography>
                     <Paper sx={{ p: 4, bgcolor: '#0a1929', border: '1px solid rgba(255,255,255,0.05)' }}>
                         <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-                            <TextField fullWidth label={t("Username")} value={name} onChange={e => setName(e.target.value)} disabled={!isNewUser} variant="outlined" />
-                            <TextField fullWidth label={t("Password")} type='password' value={pass} onChange={e => setPass(e.target.value)} variant="outlined" />
+                            <TextField
+                                fullWidth
+                                label={t("Username")}
+                                value={name}
+                                disabled={true}
+                                variant="outlined"
+                                helperText={t("Kullanıcı adı değiştirilemez")}
+                            />
+                            <TextField
+                                fullWidth
+                                label={t("Password")}
+                                type='password'
+                                value={pass}
+                                onChange={e => setPass(e.target.value)}
+                                variant="outlined"
+                                helperText={t("Oyun şifrenizi değiştirdiyseniz buradan güncelleyin")}
+                            />
                             <FormControl fullWidth>
                                 <InputLabel>{t("Server")}</InputLabel>
-                                <Select value={server} onChange={(e) => setServer(e.target.value)} label={t("Server")}>
+                                <Select value={server} label={t("Server")} onChange={e => setServer(e.target.value)}>
                                     {instances.map((inst, i) => (
                                         <MenuItem value={inst.id} key={i}>{(langData[inst.instanceLocaId] || inst.instanceLocaId) + ' ' + inst.instanceName}</MenuItem>
                                     ))}

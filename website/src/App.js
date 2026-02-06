@@ -4,8 +4,11 @@ import { ThemeProvider, createTheme } from '@mui/material/styles'
 import {
   Box, Drawer, AppBar, Toolbar, List, Typography, Divider,
   ListItem, ListItemButton, ListItemIcon, ListItemText, CssBaseline,
-  Avatar, Chip, Collapse, IconButton, Menu, MenuItem, Checkbox
+  Avatar, Chip, Collapse, IconButton, Menu, MenuItem, Checkbox,
+  Dialog, DialogTitle, DialogContent, DialogActions, TextField, Button,
+  Select, FormControl, InputLabel, Alert, CircularProgress
 } from '@mui/material'
+import CastleIcon from '@mui/icons-material/Castle'
 import DashboardIcon from '@mui/icons-material/Dashboard'
 import SettingsIcon from '@mui/icons-material/Settings'
 import LogoutIcon from '@mui/icons-material/Logout'
@@ -45,6 +48,15 @@ function App() {
   const [language, setLanguage] = React.useState(localStorage.getItem('lang') || 'tr');
   const [anchorEl, setAnchorEl] = React.useState(null);
 
+  // Castle Setup Modal States
+  const [showCastleModal, setShowCastleModal] = React.useState(false);
+  const [castleStatus, setCastleStatus] = React.useState(null);
+  const [castleForm, setCastleForm] = React.useState({ server: '', username: '', password: '' });
+  const [castleError, setCastleError] = React.useState('');
+  const [castleLoading, setCastleLoading] = React.useState(false);
+  const [instances, setInstances] = React.useState([]);
+  const [langData, setLangData] = React.useState({});
+
   const t = (key) => getTranslation(language, key);
 
   let ws = React.useMemo(() => {
@@ -61,10 +73,72 @@ function App() {
         setUsersStatus(prev => ({ ...prev, [obj.id]: obj }));
       } else if (action === ActionType.GetUUID && err === ErrorType.Unauthenticated) {
         window.location.href = "signin.html";
+      } else if (action === ActionType.GetCastleStatus) {
+        setCastleStatus(obj);
+        // Kale yoksa veya kilitli değilse modal göster
+        if (!obj.hasCastle || !obj.isLocked) {
+          setShowCastleModal(true);
+        }
+      } else if (action === ActionType.VerifyCastle) {
+        setCastleLoading(false);
+        if (err === ErrorType.Success && obj.success) {
+          setShowCastleModal(false);
+          setCastleError('');
+          // Kullanıcı listesini yenile
+          ws.send(JSON.stringify([ErrorType.Success, ActionType.GetUsers, {}]));
+        } else {
+          setCastleError(obj.error || 'Bir hata oluştu');
+        }
       }
+    }
+    // Bağlantı açıldığında kale durumunu kontrol et
+    ws.onopen = () => {
+      ws.send(JSON.stringify([ErrorType.Success, ActionType.GetCastleStatus, {}]));
     }
     return ws
   }, [selectedUser])
+
+  // Sunucu listesini yükle
+  React.useEffect(() => {
+    const fetchInstances = async () => {
+      try {
+        const protocol = window.location.protocol === 'https:' ? "https" : "http";
+        const host = `${protocol}://${window.location.hostname}:${window.location.port}`;
+        const langRes = await fetch(`${host}/lang.json`);
+        setLangData(await langRes.json());
+        const xmlRes = await fetch(`${host}/1.xml`);
+        const xmlDoc = new DOMParser().parseFromString(await xmlRes.text(), "text/xml");
+        const _instances = xmlDoc.getElementsByTagName("instance");
+        const loadedInstances = [];
+        for (let i = 0; i < _instances.length; i++) {
+          const obj = _instances[i];
+          let sName, locaId, iName;
+          for (let j = 0; j < obj.childNodes.length; j++) {
+            const c = obj.childNodes[j];
+            if (c.nodeName === "server") sName = c.textContent;
+            if (c.nodeName === "instanceLocaId") locaId = c.textContent;
+            if (c.nodeName === "instanceName") iName = c.textContent;
+          }
+          if (locaId) loadedInstances.push({ id: obj.getAttribute("value"), server: sName, instanceLocaId: locaId, instanceName: iName });
+        }
+        setInstances(loadedInstances);
+        if (loadedInstances.length > 0 && !castleForm.server) {
+          setCastleForm(prev => ({ ...prev, server: loadedInstances[0].id }));
+        }
+      } catch (error) { console.error(error); }
+    };
+    fetchInstances();
+  }, []);
+
+  const handleCastleSubmit = () => {
+    if (!castleForm.server || !castleForm.username || !castleForm.password) {
+      setCastleError('Tüm alanları doldurun');
+      return;
+    }
+    setCastleLoading(true);
+    setCastleError('');
+    ws.send(JSON.stringify([ErrorType.Success, ActionType.VerifyCastle, castleForm]));
+  };
 
   const handleLangMenu = (event) => setAnchorEl(event.currentTarget);
   const handleLangSelect = (lang) => { setLanguage(lang); localStorage.setItem('lang', lang); setAnchorEl(null); };
@@ -97,6 +171,72 @@ function App() {
 
   return (
     <ThemeProvider theme={darkTheme}>
+      {/* Kale Kurulum Modal */}
+      <Dialog
+        open={showCastleModal}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: { bgcolor: '#0a1929', border: '1px solid rgba(144, 202, 249, 0.3)' }
+        }}
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+          <CastleIcon sx={{ color: '#90caf9' }} />
+          <Typography variant="h6">{t("Kale Bağlantısı")}</Typography>
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Alert severity="warning" sx={{ mb: 3 }}>
+            {t("Bu işlem tek seferlik! Kale atandıktan sonra değiştirilemez.")}
+          </Alert>
+
+          {castleError && (
+            <Alert severity="error" sx={{ mb: 2 }}>{castleError}</Alert>
+          )}
+
+          <FormControl fullWidth sx={{ mb: 2 }}>
+            <InputLabel>{t("Sunucu")}</InputLabel>
+            <Select
+              value={castleForm.server}
+              onChange={(e) => setCastleForm(prev => ({ ...prev, server: e.target.value }))}
+              label={t("Sunucu")}
+            >
+              {instances.map((inst, i) => (
+                <MenuItem value={inst.id} key={i}>
+                  {(langData[inst.instanceLocaId] || inst.instanceLocaId) + ' ' + inst.instanceName}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <TextField
+            fullWidth
+            label={t("Oyun Kullanıcı Adı")}
+            value={castleForm.username}
+            onChange={(e) => setCastleForm(prev => ({ ...prev, username: e.target.value }))}
+            sx={{ mb: 2 }}
+          />
+
+          <TextField
+            fullWidth
+            label={t("Oyun Şifresi")}
+            type="password"
+            value={castleForm.password}
+            onChange={(e) => setCastleForm(prev => ({ ...prev, password: e.target.value }))}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 3, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <Button
+            variant="contained"
+            onClick={handleCastleSubmit}
+            disabled={castleLoading}
+            startIcon={castleLoading ? <CircularProgress size={20} /> : <CastleIcon />}
+            sx={{ px: 4 }}
+          >
+            {castleLoading ? t("Doğrulanıyor...") : t("Kaydet ve Kilitle")}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <Box sx={{ display: 'flex' }}>
         <CssBaseline />
         <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, bgcolor: 'rgba(10, 25, 41, 0.8)', backdropFilter: 'blur(10px)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>

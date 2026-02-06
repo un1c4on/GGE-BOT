@@ -6,7 +6,7 @@ const http = require('node:http')
 const express = require('express')
 const https = require('node:https')
 const bodyParser = require('body-parser')
-const { WebSocketServer } = require("ws")
+const { WebSocketServer, WebSocket } = require("ws")
 const { parseStringPromise } = require('xml2js')
 const { Worker } = require('node:worker_threads')
 const ErrorType = require('./errors.json')
@@ -17,6 +17,36 @@ const { I18n } = require('i18n')
 const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
 const { Pool } = require('pg');
+const rateLimit = require('express-rate-limit');
+
+// Login için Rate Limiter - Brute Force koruması
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 dakika
+  max: 5, // 15 dakikada maksimum 5 deneme
+  message: { error: 'Çok fazla giriş denemesi. 15 dakika sonra tekrar deneyin.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Başarılı girişlerde sayacı sıfırlama (opsiyonel)
+  skipSuccessfulRequests: false,
+});
+
+// Signup için Rate Limiter
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 saat
+  max: 3, // Saatte maksimum 3 kayıt denemesi
+  message: { error: 'Çok fazla kayıt denemesi. 1 saat sonra tekrar deneyin.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Genel API Rate Limiter
+const apiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 dakika
+  max: 100, // Dakikada 100 istek
+  message: { error: 'Çok fazla istek. Lütfen bekleyin.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const i18n = new I18n({
   locales: ['en', 'de', 'ar', 'fi', 'he', 'hu', 'pl', 'ro', 'tr'],
@@ -111,17 +141,20 @@ const changeUser = async (userId, user) => {
   });
   if (!gameAcc) return null;
 
+  // Kilitli kale için sadece şifre ve is_active değiştirilebilir
   const updateData = {
-    // ... (bu kısım aynı kalacak)
-    game_username: user.name,
-    is_active: user.state == 1,
-    game_server: user.server || '10'
+    is_active: user.state == 1
   };
 
+  // Kilitli değilse username ve server değiştirilebilir
+  if (!gameAcc.is_locked) {
+    updateData.game_username = user.name;
+    updateData.game_server = user.server || '10';
+  }
+
+  // Şifre her zaman güncellenebilir (oyun şifresi değiştiğinde)
   if (user.pass && user.pass !== 'null' && user.pass !== '') {
     updateData.game_password_encrypted = user.pass;
-    // Ana web kullanıcısı şifresini de güncelle!
-    await DBUser.update({ password_hash: user.pass }, { where: { id: userId } });
   }
 
   await gameAcc.update(updateData);
@@ -215,6 +248,136 @@ async function start() {
   xml.network.instances[0].instance.forEach(e =>
     instances.push({ gameURL: e.server[0], gameServer: e.zone[0], gameID: e['$'].value }))
 
+  // GGE Sunucusuna Credential Doğrulama Fonksiyonu
+  const verifyGGECredentials = (serverID, username, password) => {
+    return new Promise((resolve) => {
+      const instance = instances.find(e => Number(e.gameID) == serverID);
+      if (!instance) {
+        resolve({ success: false, error: 'Geçersiz sunucu ID' });
+        return;
+      }
+
+      const { gameURL, gameServer } = instance;
+      let ws;
+      let timeout;
+      let resolved = false;
+
+      const cleanup = () => {
+        if (timeout) clearTimeout(timeout);
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.close();
+        }
+      };
+
+      const done = (result) => {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+        resolve(result);
+      };
+
+      // 30 saniye timeout
+      timeout = setTimeout(() => {
+        done({ success: false, error: 'Bağlantı zaman aşımına uğradı' });
+      }, 30000);
+
+      try {
+        ws = new WebSocket(`wss://${gameURL}/`);
+
+        ws.on('open', () => {
+          ws.send('<msg t="sys"><body action="verChk" r="0"><ver v="166"/></body></msg>');
+        });
+
+        ws.on('error', () => {
+          done({ success: false, error: 'Sunucuya bağlanılamadı' });
+        });
+
+        ws.on('close', () => {
+          if (!resolved) {
+            done({ success: false, error: 'Bağlantı kapandı' });
+          }
+        });
+
+        ws.on('message', (rawData) => {
+          const message = rawData.toString();
+
+          // XML mesajları
+          if (message.includes("action='apiOK'")) {
+            ws.send(`<msg t="sys"><body action="login" r="0"><login z="${gameServer}"><nick><![CDATA[]]></nick><pword><![CDATA[${username}%${password}%0]]></pword></login></body></msg>`);
+            return;
+          }
+
+          if (message.includes("action='joinOK'")) {
+            ws.send('<msg t="sys"><body action="roundTrip" r="1"></body></msg>');
+            const randomVal = (Math.random() * Number.MAX_VALUE).toFixed();
+            ws.send(`%xt%${gameServer}%vck%1%undefined%web-html5%<RoundHouseKick>%${randomVal}%`);
+            return;
+          }
+
+          // Raw protocol cevabı
+          if (message.charAt(0) === '%') {
+            const params = message.substr(1, message.length - 2).split('%');
+            const xtData = params.splice(1, params.length - 1);
+            const command = xtData[0];
+            const errorCode = Number(xtData[2]);
+
+            // rlu → autoJoin (odaya katılma)
+            if (command === 'rlu') {
+              ws.send('<msg t="sys"><body action="autoJoin" r="-1"></body></msg>');
+              return;
+            }
+
+            // vck → lli (giriş)
+            if (command === 'vck') {
+              ws.send(`%xt%${gameServer}%lli%1%${JSON.stringify({
+                CONM: 212,
+                RTM: 25,
+                ID: 0,
+                PL: 1,
+                NOM: username,
+                PW: password,
+                LT: null,
+                LANG: "tr",
+                DID: "0",
+                AID: "1745592024940879420",
+                KID: "",
+                REF: "https://empire.goodgamestudios.com",
+                GCI: "",
+                SID: 9,
+                PLFID: 1
+              })}%`);
+              return;
+            }
+
+            if (command === 'lli') {
+              if (errorCode === 0) {
+                console.log(`[VerifyCastle] ${username} - Doğrulama başarılı`);
+                done({ success: true });
+              } else if (errorCode === 453) {
+                console.log(`[VerifyCastle] ${username} - Çok fazla deneme`);
+                done({ success: false, error: 'Çok fazla giriş denemesi. Lütfen bekleyin.' });
+              } else if (errorCode === 20) {
+                console.log(`[VerifyCastle] ${username} - Şifre yanlış`);
+                done({ success: false, error: 'Şifre yanlış' });
+              } else if (errorCode === 21) {
+                console.log(`[VerifyCastle] ${username} - Oyuncu bulunamadı`);
+                done({ success: false, error: 'Oyuncu bulunamadı' });
+              } else if (errorCode === 27) {
+                console.log(`[VerifyCastle] ${username} - Hesap yasaklı`);
+                done({ success: false, error: 'Hesap yasaklı (banned)' });
+              } else {
+                console.log(`[VerifyCastle] ${username} - Hata kodu: ${errorCode}`);
+                done({ success: false, error: `Giriş hatası: ${errorCode}` });
+              }
+            }
+          }
+        });
+      } catch (err) {
+        done({ success: false, error: err.message || 'Beklenmeyen hata' });
+      }
+    });
+  };
+
   let pluginData = require('./plugins')
   try { pluginData = pluginData.concat(require('./plugins-extra')) } catch { }
 
@@ -265,8 +428,8 @@ async function start() {
 
   // --- YENİ API ENDPOINTLERİ ---
 
-  // 1. KAYIT OL (Sadece Web Kullanıcısı)
-  app.post('/api/register', bodyParser.json(), async (req, res) => {
+  // 1. KAYIT OL (Sadece Web Kullanıcısı) - Rate Limited
+  app.post('/api/register', signupLimiter, bodyParser.json(), async (req, res) => {
     const { username, email, password } = req.body;
     if (!username || !email || !password) return res.status(400).json({ error: i18n.__('missingFields') });
 
@@ -291,8 +454,8 @@ async function start() {
     }
   });
 
-  // 2. GİRİŞ YAP
-  app.post('/api/login', bodyParser.json(), async (req, res) => {
+  // 2. GİRİŞ YAP (Rate Limited - Brute Force koruması)
+  app.post('/api/login', loginLimiter, bodyParser.json(), async (req, res) => {
     const { email, password } = req.body;
     try {
       // Hem username hem email ile girişe izin ver
@@ -304,7 +467,7 @@ async function start() {
         // --- ABONELİK KONTROLÜ ---
         if (user.role !== 'admin') { // Admin her zaman girebilir
           if (!user.subscription_end_date || new Date(user.subscription_end_date) < new Date()) {
-            return res.status(403).json({ error: i18n.__('subscriptionExpired') || 'Abonelik süreniz dolmuş veya başlamamış.' });
+            return res.status(403).json({ error: i18n.__('subscriptionExpired') });
           }
         }
         // -------------------------
@@ -363,8 +526,8 @@ async function start() {
     }
   });
 
-  // ESKİ API (Geriye uyumluluk veya signin.html tarafından çağrılanlar için)
-  app.post('/api', bodyParser.json(), async (req, res) => {
+  // ESKİ API (Geriye uyumluluk veya signin.html tarafından çağrılanlar için) - Rate Limited
+  app.post('/api', loginLimiter, bodyParser.json(), async (req, res) => {
     let json = req.body
     res.setHeader('Content-Type', 'application/json')
 
@@ -581,6 +744,100 @@ async function start() {
           }
           loggedInUsers[userId]?.forEach(async ({ ws }) => ws.send(JSON.stringify([ErrorType.Success, ActionType.GetUsers, [await getUser(userId), filteredPlugins]])))
           break
+        case ActionType.GetCastleStatus:
+          // Kullanıcının kale durumunu kontrol et
+          try {
+            const userCastle = await GameAccount.findOne({ where: { UserId: userId } });
+            const hascastle = !!userCastle;
+            const isLocked = userCastle?.is_locked || false;
+            ws.send(JSON.stringify([ErrorType.Success, ActionType.GetCastleStatus, {
+              hasCastle: hascastle,
+              isLocked: isLocked,
+              castle: hascastle ? {
+                server: userCastle.game_server,
+                username: userCastle.game_username
+              } : null
+            }]));
+          } catch (e) {
+            console.error('GetCastleStatus error:', e);
+            ws.send(JSON.stringify([ErrorType.Generic, ActionType.GetCastleStatus, { error: 'Kale durumu alınamadı' }]));
+          }
+          break
+
+        case ActionType.VerifyCastle:
+          // Kale doğrulama ve atama
+          try {
+            // Kullanıcının zaten kilitli kalesi var mı kontrol et
+            const existingCastle = await GameAccount.findOne({ where: { UserId: userId } });
+            if (existingCastle?.is_locked) {
+              ws.send(JSON.stringify([ErrorType.Generic, ActionType.VerifyCastle, {
+                success: false,
+                error: 'Zaten kilitli bir kaleniz var. Değiştirilemez.'
+              }]));
+              break;
+            }
+
+            const { server, username, password } = obj;
+            if (!server || !username || !password) {
+              ws.send(JSON.stringify([ErrorType.Generic, ActionType.VerifyCastle, {
+                success: false,
+                error: 'Sunucu, kullanıcı adı ve şifre gerekli.'
+              }]));
+              break;
+            }
+
+            // GGE sunucusuna giriş doğrulaması yap
+            const verifyResult = await verifyGGECredentials(server, username, password);
+
+            if (!verifyResult.success) {
+              ws.send(JSON.stringify([ErrorType.Generic, ActionType.VerifyCastle, {
+                success: false,
+                error: verifyResult.error || 'Giriş bilgileri doğrulanamadı.'
+              }]));
+              break;
+            }
+
+            // Mevcut kale varsa güncelle, yoksa oluştur
+            let gameAccount;
+            if (existingCastle) {
+              existingCastle.game_server = String(server);
+              existingCastle.game_username = username;
+              existingCastle.game_password_encrypted = password;
+              existingCastle.is_locked = true; // Kilitle
+              await existingCastle.save();
+              gameAccount = existingCastle;
+            } else {
+              gameAccount = await GameAccount.create({
+                UserId: userId,
+                game_server: String(server),
+                game_username: username,
+                game_password_encrypted: password,
+                is_active: false,
+                is_locked: true // Kilitle
+              });
+            }
+
+            ws.send(JSON.stringify([ErrorType.Success, ActionType.VerifyCastle, {
+              success: true,
+              message: 'Kayıt başarılı',
+              castle: {
+                id: gameAccount.id,
+                server: gameAccount.game_server,
+                username: gameAccount.game_username
+              }
+            }]));
+
+            // Kullanıcı listesini yenile
+            await refreshUsers();
+          } catch (e) {
+            console.error('VerifyCastle error:', e);
+            ws.send(JSON.stringify([ErrorType.Generic, ActionType.VerifyCastle, {
+              success: false,
+              error: e.message || 'Kale kaydedilemedi.'
+            }]));
+          }
+          break
+
         case ActionType.GetLogs:
           if (!obj) { loggedInUsers[userId].find(o => o.ws == ws).viewedUser = undefined; break }
           const u = new User(obj); const w = botMap.get(u.id)

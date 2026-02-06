@@ -33,6 +33,8 @@
 	"Successfully saved": "Changes saved successfully!",
 	"started": "started",
 	"gameAccountSessionAlreadyInUse": "gameAccountSessionAlreadyInUse",
-	"subscriptionExpired": "subscriptionExpired",
-	"invalidCredentials": "invalidCredentials"
+	"subscriptionExpired": "Aboneliğiniz yok. Yetkili ile iletişime geçin.",
+	"invalidCredentials": "Kullanıcı adı veya şifre hatalı.",
+	"missingFields": "Lütfen tüm alanları doldurun.",
+	"userAlreadyExists": "Bu e-posta adresi zaten kayıtlı."
 }

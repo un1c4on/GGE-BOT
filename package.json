@@ -5,6 +5,7 @@
     "discord.js": "^14.16.3",
     "emoji-dictionary": "^1.0.12",
     "express": "^4.21.1",
+    "express-rate-limit": "^8.2.1",
     "express-session": "^1.19.0",
     "i18n": "^0.15.3",
     "node-cache": "^5.1.2",

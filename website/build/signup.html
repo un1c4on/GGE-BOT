@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign Up - GGE-BOT</title>
+    <title>Kayıt Ol - GGE-BOT</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         body {
@@ -118,30 +118,30 @@
 
 <div class="login-card">
     <div class="logo-container">
-        <h1>Create Account</h1>
-        <p style="color: #666; margin-top: 0.5rem;">Join GGE-BOT Platform</p>
+        <h1>Hesap Oluştur</h1>
+        <p style="color: #666; margin-top: 0.5rem;">GGE-BOT Platformuna Katılın</p>
     </div>
 
     <div id="msgBox" class="msg-box"></div>
 
     <form id="signupForm">
         <div class="form-group">
-            <label for="username">Username</label>
-            <input type="text" id="username" name="username" required placeholder="Choose a username">
+            <label for="username">Kullanıcı Adı</label>
+            <input type="text" id="username" name="username" required placeholder="Bir kullanıcı adı seçin">
         </div>
         <div class="form-group">
-            <label for="email">Email</label>
-            <input type="email" id="email" name="email" required placeholder="your@email.com">
+            <label for="email">E-posta</label>
+            <input type="email" id="email" name="email" required placeholder="ornek@email.com">
         </div>
         <div class="form-group">
-            <label for="password">Password</label>
-            <input type="password" id="password" name="password" required placeholder="Create a password">
+            <label for="password">Şifre</label>
+            <input type="password" id="password" name="password" required placeholder="Bir şifre oluşturun">
         </div>
-        <button type="submit" class="btn" id="signupBtn">Sign Up</button>
+        <button type="submit" class="btn" id="signupBtn">Kayıt Ol</button>
     </form>
 
     <div class="footer">
-        Already have an account? <a href="signin.html">Log In</a>
+        Zaten hesabınız var mı? <a href="signin.html">Giriş Yap</a>
     </div>
 </div>
 
@@ -152,7 +152,7 @@
         const msgBox = document.getElementById('msgBox');
         
         btn.disabled = true;
-        btn.innerText = "Creating Account...";
+        btn.innerText = "Hesap oluşturuluyor...";
         msgBox.style.display = 'none';
         msgBox.className = 'msg-box'; // Reset classes
 
@@ -170,25 +170,25 @@
             const data = await res.json();
 
             if (res.ok) {
-                msgBox.innerText = "Account created successfully! Redirecting to login...";
+                msgBox.innerText = "Kayıt başarılı! Giriş ekranına yönlendiriliyorsunuz.";
                 msgBox.classList.add('success');
                 msgBox.style.display = 'block';
                 setTimeout(() => {
                     window.location.href = 'signin.html';
                 }, 2000);
             } else {
-                msgBox.innerText = data.error || "Registration failed.";
+                msgBox.innerText = data.error || "Kayıt başarısız.";
                 msgBox.classList.add('error');
                 msgBox.style.display = 'block';
                 btn.disabled = false;
-                btn.innerText = "Sign Up";
+                btn.innerText = "Kayıt Ol";
             }
         } catch (err) {
-            msgBox.innerText = "Connection error. Please try again.";
+            msgBox.innerText = "Bağlantı hatası. Lütfen tekrar deneyin.";
             msgBox.classList.add('error');
             msgBox.style.display = 'block';
             btn.disabled = false;
-            btn.innerText = "Sign Up";
+            btn.innerText = "Kayıt Ol";
         }
     });
 </script>
